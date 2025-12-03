@@ -98,7 +98,6 @@ function addAircraftMarker(ac) {
 
   const popupHtml = `
     <strong>${ac.callsign || ''}</strong><br/>
-    ICAO24: ${ac.icao24 || ''}<br/>
     Model: ${ac.model || ''}<br/>
     Airline: ${ac.airline || ''}<br/>
     Origin: ${ac.originDisplay || ''}<br/>
@@ -178,11 +177,10 @@ async function fetchAircraft() {
       }
 
       tr.appendChild(cell(ac.callsign || ''));
-      tr.appendChild(cell(ac.icao24 || ''));
-      tr.appendChild(cell(ac.model || ''));
       tr.appendChild(cell(ac.airline || ''));
       tr.appendChild(cell(ac.originDisplay || ''));
       tr.appendChild(cell(ac.destinationDisplay || ''));
+      tr.appendChild(cell(ac.model || ''));
       tr.appendChild(cell(altText));
       tr.appendChild(cell(spdText));
       tr.appendChild(cell(lookText));
