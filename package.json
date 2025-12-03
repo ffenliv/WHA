@@ -1,7 +1,7 @@
 {
   "name": "adsbviewer-node",
-  "version": "1.1.0",
-  "description": "ADSB aircraft viewer - Node/Express web app with routes and weather",
+  "version": "1.2.0",
+  "description": "ADSB aircraft viewer - Node/Express web app with routes, weather, and FL labels",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -12,6 +12,7 @@
   "license": "MIT",
   "dependencies": {
     "axios": "^1.7.9",
+    "dotenv": "^17.2.3",
     "express": "^4.21.2"
   }
 }

@@ -8,7 +8,7 @@
 //  - Fetches cloud ceiling (ft) near Lockeport via AviationWeather METAR API (CYQI)
 //  - Uses adsbdb.com and AviationStack + OpenFlights / OurAirports data
 //    to infer origin/destination city+country for each callsign
-
+require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const axios = require('axios');
@@ -31,7 +31,8 @@ const ADSBLOL_URL_TEMPLATE =
 const ADSBDB_ROUTE_URL = 'https://api.adsbdb.com/v0/callsign/';
 
 // AviationStack - free tier API key (provided by user)
-const AVIATIONSTACK_API_KEY = '891593f7b7cb080010ae7a44124aa58b';
+const AVIATIONSTACK_API_KEY = process.env.AVIATION_STACK_API_KEY || null;
+console.log("ASAK: " + AVIATIONSTACK_API_KEY)
 const AVIATIONSTACK_FLIGHTS_URL = 'http://api.aviationstack.com/v1/flights';
 
 // OpenFlights airports data (CSV) – includes ICAO, city, country
@@ -122,7 +123,6 @@ function parseCsvLine(line) {
     const c = line[i];
     if (c === '"') {
       if (inQuotes && line[i + 1] === '"') {
-        // Escaped quote
         current += '"';
         i++;
       } else {

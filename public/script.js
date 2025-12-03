@@ -23,25 +23,58 @@ function clearMarkers() {
   }
 }
 
+function airportCodeFromIcao(icao) {
+  if (!icao) return '';
+  const up = icao.toUpperCase();
+
+  // Simple heuristic: for North American ICAOs (KXXX / CXXX),
+  // strip the leading K/C to get the common 3-letter code.
+  if (up.length === 4 && (up.startsWith('K') || up.startsWith('C'))) {
+    return up.slice(1);
+  }
+  return up;
+}
+
 function addAircraftMarker(ac) {
   if (ac.lat == null || ac.lon == null) return;
 
   const lat = ac.lat;
   const lon = ac.lon;
 
-  // Heading for arrow (0° = North)
   const heading = ac.headingDeg != null ? ac.headingDeg : 0;
 
-  // Short speed/alt text for the label
   const spdShort = ac.speedKt != null ? Math.round(ac.speedKt) : null;
   const altShort = ac.altitudeFt != null ? Math.round(ac.altitudeFt) : null;
 
-  let labelText = '';
-  const parts = [];
-  if (spdShort != null) parts.push(`${spdShort}kt`);
-  if (altShort != null) parts.push(`${altShort}ft`);
-  if (parts.length > 0) {
-    labelText = parts.join(' / ');
+  // Flight level text
+  let flightLevelText = '';
+  if (altShort != null && altShort > 0) {
+    const roundedForFl =
+      altShort < 10000
+        ? Math.round(altShort / 1000) * 1000
+        : Math.round(altShort / 2000) * 2000;
+
+    const fl = Math.round(roundedForFl / 100);
+    flightLevelText = 'FL' + fl.toString().padStart(3, '0');
+  }
+
+  const line1Parts = [];
+  if (spdShort != null) line1Parts.push(`${spdShort}kt`);
+  if (flightLevelText) line1Parts.push(flightLevelText);
+  const line1 = line1Parts.join(' ');
+
+  const originCode = airportCodeFromIcao(ac.originIcao);
+  const destCode = airportCodeFromIcao(ac.destinationIcao);
+  const line2 =
+    originCode && destCode ? `${originCode} → ${destCode}` : '';
+
+  let labelHtml = '';
+  if (line1) {
+    labelHtml += `<div class="aircraft-label">${line1}`;
+    if (line2) {
+      labelHtml += `<br/>${line2}`;
+    }
+    labelHtml += '</div>';
   }
 
   const icon = L.divIcon({
@@ -50,7 +83,7 @@ function addAircraftMarker(ac) {
     iconAnchor: [12, 12],
     html: `
       <div class="aircraft-arrow" style="transform: rotate(${heading}deg);"></div>
-      ${labelText ? `<div class="aircraft-label">${labelText}</div>` : ''}
+      ${labelHtml}
     `
   });
 
@@ -79,7 +112,6 @@ function addAircraftMarker(ac) {
   marker.bindPopup(popupHtml);
   marker.addTo(markersLayer);
 }
-
 
 async function fetchAircraft() {
   const locationSelect = document.getElementById('locationSelect');
