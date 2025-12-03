@@ -2,7 +2,7 @@
 //
 // Node/Express app that:
 //  - Serves a web UI (public/index.html)
-//  - Provides /api/aircraft?location=1|2|3
+//  - Provides /api/aircraft?location=1|2|3&radiusKm=...
 //  - Calls ADSB.lol for aircraft near the selected location
 //  - Computes bearing + direction from observer at 43.687737, -65.128691
 //  - Fetches cloud ceiling (ft) near Lockeport via AviationWeather METAR API (CYQI)
@@ -23,9 +23,9 @@ const PORT = process.env.PORT || 3000;
 // CONFIG
 // ---------------------------------------------------------------------
 
-const RADIUS_KM = 200.0;
+// Default radius (km) if none provided
+const DEFAULT_RADIUS_KM = 100.0;
 const NM_PER_KM = 1.0 / 1.852; // 1 nautical mile ≈ 1.852 km
-const RADIUS_NM = Math.round(RADIUS_KM * NM_PER_KM);
 
 const ADSBLOL_URL_TEMPLATE =
   'https://api.adsb.lol/v2/lat/{lat}/lon/{lon}/dist/{radius}';
@@ -733,9 +733,20 @@ async function fetchCloudCeilingForLockeport() {
 // Combine everything for one location
 // ---------------------------------------------------------------------
 
-async function getAircraftForLocationKey(locationKey) {
+async function getAircraftForLocationKey(locationKey, radiusKmRaw) {
   const loc = LOCATIONS[locationKey] || LOCATIONS['2'];
-  const data = await fetchAircraftRaw(loc.lat, loc.lon, RADIUS_NM);
+
+  let radiusKm = Number(radiusKmRaw);
+  if (!Number.isFinite(radiusKm) || radiusKm <= 0) {
+    radiusKm = DEFAULT_RADIUS_KM;
+  }
+  // Clamp radius to a reasonable range
+  if (radiusKm < 1) radiusKm = 1;
+  if (radiusKm > 2000) radiusKm = 2000;
+
+  const radiusNm = Math.round(radiusKm * NM_PER_KM);
+
+  const data = await fetchAircraftRaw(loc.lat, loc.lon, radiusNm);
   const rawList = Array.isArray(data.ac) ? data.ac : [];
 
   const baseAircraft = rawList.map(baseFormatAircraft);
@@ -751,7 +762,7 @@ async function getAircraftForLocationKey(locationKey) {
     location: loc.name,
     centerLat: loc.lat,
     centerLon: loc.lon,
-    radiusKm: RADIUS_KM,
+    radiusKm,
     cloudCeilingFt,
     aircraft
   };
@@ -765,8 +776,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/api/aircraft', async (req, res) => {
   const location = req.query.location || '2';
+  const radiusKm = req.query.radiusKm;
   try {
-    const result = await getAircraftForLocationKey(location);
+    const result = await getAircraftForLocationKey(location, radiusKm);
     res.json(result);
   } catch (err) {
     console.error('[API] Error in /api/aircraft:', err);

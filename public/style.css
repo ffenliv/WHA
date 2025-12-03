@@ -9,17 +9,20 @@ h1 {
 
 .controls {
   margin: 1em 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em 1em;
+  align-items: center;
 }
 
 label {
-  margin-right: 0.5em;
+  margin-right: 0.25em;
 }
 
 select,
 button {
   font-size: 1rem;
   padding: 0.2em 0.4em;
-  margin-right: 0.5em;
 }
 
 #status {
@@ -39,6 +42,7 @@ button {
 /* Aircraft arrow marker (Leaflet divIcon) */
 .aircraft-arrow-icon {
   text-align: center;
+  pointer-events: auto;
 }
 
 .aircraft-arrow {
@@ -48,19 +52,25 @@ button {
   border-right: 8px solid transparent;
   border-bottom: 16px solid red;
   transform-origin: 50% 75%;
-  margin: 0 auto;
+  margin: 0 auto 2px auto;
 }
 
-/* Small speed/FL + route label under the arrow */
+/* Expanded box behind all flight info text */
 .aircraft-label {
-  margin-top: 2px;
-  padding: 1px 3px;
-  background: rgba(255, 255, 255, 0.85);
-  border-radius: 3px;
+  display: inline-block;
+  padding: 3px 6px;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 4px;
   font-size: 10px;
-  line-height: 1.1;
+  line-height: 1.15;
   white-space: nowrap;
-  border: 1px solid rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+/* Slight spacing between lines inside the label */
+.aircraft-label br {
+  line-height: 1.3;
 }
 
 table {

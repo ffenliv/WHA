@@ -69,8 +69,11 @@ function addAircraftMarker(ac) {
     originCode && destCode ? `${originCode} → ${destCode}` : '';
 
   let labelHtml = '';
-  if (line1) {
-    labelHtml += `<div class="aircraft-label">${line1}`;
+  if (line1 || line2) {
+    labelHtml += `<div class="aircraft-label">`;
+    if (line1) {
+      labelHtml += `${line1}`;
+    }
     if (line2) {
       labelHtml += `<br/>${line2}`;
     }
@@ -114,17 +117,25 @@ function addAircraftMarker(ac) {
 
 async function fetchAircraft() {
   const locationSelect = document.getElementById('locationSelect');
+  const radiusSelect = document.getElementById('radiusSelect');
   const statusEl = document.getElementById('status');
   const tbody = document.getElementById('resultsBody');
 
   const loc = locationSelect.value;
+  const radiusKm = radiusSelect ? radiusSelect.value : '';
 
   statusEl.textContent = 'Loading...';
   tbody.innerHTML = '';
   clearMarkers();
 
   try {
-    const resp = await fetch(`/api/aircraft?location=${encodeURIComponent(loc)}`);
+    const params = new URLSearchParams();
+    params.set('location', loc);
+    if (radiusKm) {
+      params.set('radiusKm', radiusKm);
+    }
+
+    const resp = await fetch(`/api/aircraft?${params.toString()}`);
     if (!resp.ok) {
       throw new Error(`HTTP ${resp.status}`);
     }
@@ -134,7 +145,7 @@ async function fetchAircraft() {
     const locName = data.location || '';
     const centerLat = data.centerLat;
     const centerLon = data.centerLon;
-    const radiusKm = data.radiusKm || 0;
+    const radiusKmUsed = data.radiusKm || radiusKm || 0;
     const cloudCeilingFt = data.cloudCeilingFt;
 
     if (map && centerLat != null && centerLon != null) {
@@ -143,9 +154,9 @@ async function fetchAircraft() {
 
     let statusText = '';
     if (aircraft.length === 0) {
-      statusText = `No aircraft currently reported within ~${radiusKm} km of ${locName}.`;
+      statusText = `No aircraft currently reported within ~${radiusKmUsed} km of ${locName}.`;
     } else {
-      statusText = `Found ${aircraft.length} aircraft within ~${radiusKm} km of ${locName}.`;
+      statusText = `Found ${aircraft.length} aircraft within ~${radiusKmUsed} km of ${locName}.`;
     }
 
     if (cloudCeilingFt != null) {
@@ -199,7 +210,17 @@ document.addEventListener('DOMContentLoaded', () => {
   initMap();
 
   const refreshBtn = document.getElementById('refreshBtn');
+  const radiusSelect = document.getElementById('radiusSelect');
+  const locationSelect = document.getElementById('locationSelect');
+
   refreshBtn.addEventListener('click', fetchAircraft);
+
+  if (radiusSelect) {
+    radiusSelect.addEventListener('change', fetchAircraft);
+  }
+  if (locationSelect) {
+    locationSelect.addEventListener('change', fetchAircraft);
+  }
 
   fetchAircraft();
 });
