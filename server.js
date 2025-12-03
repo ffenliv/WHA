@@ -23,7 +23,7 @@ const PORT = process.env.PORT || 3000;
 // CONFIG
 // ---------------------------------------------------------------------
 
-const RADIUS_KM = 100.0;
+const RADIUS_KM = 200.0;
 const NM_PER_KM = 1.0 / 1.852; // 1 nautical mile ≈ 1.852 km
 const RADIUS_NM = Math.round(RADIUS_KM * NM_PER_KM);
 
