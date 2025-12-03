@@ -1,0 +1,175 @@
+// public/script.js
+
+let map;
+let markersLayer;
+
+function initMap() {
+  const defaultLat = 43.700;
+  const defaultLon = -65.117;
+
+  map = L.map('map').setView([defaultLat, defaultLon], 9);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+
+  markersLayer = L.layerGroup().addTo(map);
+}
+
+function clearMarkers() {
+  if (markersLayer) {
+    markersLayer.clearLayers();
+  }
+}
+
+function addAircraftMarker(ac) {
+  if (ac.lat == null || ac.lon == null) return;
+
+  const lat = ac.lat;
+  const lon = ac.lon;
+
+  // Heading for arrow (0° = North)
+  const heading = ac.headingDeg != null ? ac.headingDeg : 0;
+
+  // Short speed/alt text for the label
+  const spdShort = ac.speedKt != null ? Math.round(ac.speedKt) : null;
+  const altShort = ac.altitudeFt != null ? Math.round(ac.altitudeFt) : null;
+
+  let labelText = '';
+  const parts = [];
+  if (spdShort != null) parts.push(`${spdShort}kt`);
+  if (altShort != null) parts.push(`${altShort}ft`);
+  if (parts.length > 0) {
+    labelText = parts.join(' / ');
+  }
+
+  const icon = L.divIcon({
+    className: 'aircraft-arrow-icon',
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+    html: `
+      <div class="aircraft-arrow" style="transform: rotate(${heading}deg);"></div>
+      ${labelText ? `<div class="aircraft-label">${labelText}</div>` : ''}
+    `
+  });
+
+  const marker = L.marker([lat, lon], { icon });
+
+  const altText = altShort != null ? altShort + ' ft' : 'N/A';
+  const spdText = spdShort != null ? spdShort + ' kt' : 'N/A';
+  const lookText =
+    ac.lookDirection && ac.bearingDeg != null
+      ? `${ac.lookDirection} (${ac.bearingDeg.toFixed(1)}°)`
+      : 'N/A';
+
+  const popupHtml = `
+    <strong>${ac.callsign || ''}</strong><br/>
+    ICAO24: ${ac.icao24 || ''}<br/>
+    Model: ${ac.model || ''}<br/>
+    Airline: ${ac.airline || ''}<br/>
+    Origin: ${ac.originDisplay || ''}<br/>
+    Destination: ${ac.destinationDisplay || ''}<br/>
+    Alt: ${altText}<br/>
+    Speed: ${spdText}<br/>
+    Heading: ${ac.headingDeg != null ? ac.headingDeg.toFixed(0) + '°' : 'N/A'}<br/>
+    Look: ${lookText}
+  `;
+
+  marker.bindPopup(popupHtml);
+  marker.addTo(markersLayer);
+}
+
+
+async function fetchAircraft() {
+  const locationSelect = document.getElementById('locationSelect');
+  const statusEl = document.getElementById('status');
+  const tbody = document.getElementById('resultsBody');
+
+  const loc = locationSelect.value;
+
+  statusEl.textContent = 'Loading...';
+  tbody.innerHTML = '';
+  clearMarkers();
+
+  try {
+    const resp = await fetch(`/api/aircraft?location=${encodeURIComponent(loc)}`);
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status}`);
+    }
+    const data = await resp.json();
+
+    const aircraft = data.aircraft || [];
+    const locName = data.location || '';
+    const centerLat = data.centerLat;
+    const centerLon = data.centerLon;
+    const radiusKm = data.radiusKm || 0;
+    const cloudCeilingFt = data.cloudCeilingFt;
+
+    if (map && centerLat != null && centerLon != null) {
+      map.setView([centerLat, centerLon], 9);
+    }
+
+    let statusText = '';
+    if (aircraft.length === 0) {
+      statusText = `No aircraft currently reported within ~${radiusKm} km of ${locName}.`;
+    } else {
+      statusText = `Found ${aircraft.length} aircraft within ~${radiusKm} km of ${locName}.`;
+    }
+
+    if (cloudCeilingFt != null) {
+      statusText += ` | Cloud ceiling near Lockeport (CYQI): ${Math.round(
+        cloudCeilingFt
+      )} ft`;
+    }
+
+    statusEl.textContent = statusText;
+
+    if (aircraft.length === 0) return;
+
+    for (const ac of aircraft) {
+      const tr = document.createElement('tr');
+
+      function cell(text) {
+        const td = document.createElement('td');
+        td.textContent = text ?? '';
+        return td;
+      }
+
+      const altText =
+        ac.altitudeFt != null ? Math.round(ac.altitudeFt).toString() : '';
+      const spdText =
+        ac.speedKt != null ? Math.round(ac.speedKt).toString() : '';
+      let lookText = '';
+      if (ac.lookDirection && ac.bearingDeg != null) {
+        lookText = `${ac.lookDirection} (${ac.bearingDeg.toFixed(1)}°)`;
+      }
+
+      tr.appendChild(cell(ac.callsign || ''));
+      tr.appendChild(cell(ac.icao24 || ''));
+      tr.appendChild(cell(ac.model || ''));
+      tr.appendChild(cell(ac.airline || ''));
+      tr.appendChild(cell(ac.originDisplay || ''));
+      tr.appendChild(cell(ac.destinationDisplay || ''));
+      tr.appendChild(cell(altText));
+      tr.appendChild(cell(spdText));
+      tr.appendChild(cell(lookText));
+
+      tbody.appendChild(tr);
+
+      addAircraftMarker(ac);
+    }
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = `Error fetching data: ${err.message}`;
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  initMap();
+
+  const refreshBtn = document.getElementById('refreshBtn');
+  refreshBtn.addEventListener('click', fetchAircraft);
+
+  fetchAircraft();
+});

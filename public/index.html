@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Nearby Aircraft Viewer</title>
+  <link rel="stylesheet" href="style.css" />
+
+  <!-- Leaflet CSS -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+</head>
+<body>
+  <h1>Nearby Aircraft Viewer (ADSB.lol)</h1>
+  <p>
+    Data source: <a href="https://adsb.lol" target="_blank">ADSB.lol</a><br />
+    Observer for direction/bearing: <strong>43.687737, -65.128691</strong>
+  </p>
+
+  <div class="controls">
+    <label for="locationSelect">Location:</label>
+    <select id="locationSelect">
+      <option value="1">Port Elgin, Ontario</option>
+      <option value="2" selected>Lockeport, Nova Scotia</option>
+      <option value="3">Mississauga, Ontario</option>
+    </select>
+    <button id="refreshBtn">Refresh</button>
+  </div>
+
+  <div id="status"></div>
+
+  <!-- Map container -->
+  <div id="map"></div>
+
+  <table id="resultsTable">
+    <thead>
+      <tr>
+        <th>Callsign</th>
+        <th>ICAO24</th>
+        <th>Model</th>
+        <th>Airline</th>
+        <th>Origin</th>
+        <th>Destination</th>
+        <th>Altitude (ft)</th>
+        <th>Speed (kt)</th>
+        <th>Look</th>
+      </tr>
+    </thead>
+    <tbody id="resultsBody"></tbody>
+  </table>
+
+  <!-- Leaflet JS -->
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+
+  <script src="script.js"></script>
+</body>
+</html>
