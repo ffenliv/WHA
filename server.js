@@ -6,7 +6,7 @@
 //  - Calls ADSB.lol for aircraft near the selected location
 //  - Computes bearing + direction from observer at 43.687737, -65.128691
 //  - Fetches cloud ceiling (ft) near Lockeport via AviationWeather METAR API (CYQI)
-//  - Uses adsbdb.com, AviationStack, and an OpenSky static routes CSV
+//  - Uses adsbdb.com, AeroDataBox, and optionally AviationStack
 //    + OpenFlights / OurAirports data to infer origin/destination city+country
 //  - Frontend shows FL labels + route codes on map markers
 
@@ -14,7 +14,6 @@ require('dotenv').config();
 
 const express = require('express');
 const path = require('path');
-const fs = require('fs');
 const axios = require('axios');
 
 const app = express();
@@ -31,12 +30,24 @@ const RADIUS_NM = Math.round(RADIUS_KM * NM_PER_KM);
 const ADSBLOL_URL_TEMPLATE =
   'https://api.adsb.lol/v2/lat/{lat}/lon/{lon}/dist/{radius}';
 
-// Free public route API
+// adsbdb route API (no key)
 const ADSBDB_ROUTE_URL = 'https://api.adsbdb.com/v0/callsign/';
 
-// AviationStack API key (from environment variable)
+// AviationStack API (optional, from environment)
 const AVIATIONSTACK_API_KEY = process.env.AVIATION_STACK_API_KEY || null;
 const AVIATIONSTACK_FLIGHTS_URL = 'https://api.aviationstack.com/v1/flights';
+
+// AeroDataBox API via RapidAPI (optional, from environment)
+// You need: AERODATABOX_API_KEY and (optionally) AERODATABOX_HOST
+// Typical host: 'aerodatabox.p.rapidapi.com'
+const AERODATABOX_API_KEY = process.env.AERODATABOX_API_KEY || null;
+const AERODATABOX_HOST =
+  process.env.AERODATABOX_HOST || 'aerodatabox.p.rapidapi.com';
+
+// AeroDataBox endpoint pattern for flight-by-number lookup
+// We'll call: GET /flights/number/{flightNumber}
+const AERODATABOX_FLIGHT_URL_TEMPLATE =
+  'https://aerodatabox.p.rapidapi.com/flights/number/{flightNumber}';
 
 // OpenFlights airports data (CSV) – includes ICAO, city, country
 const OPENFLIGHTS_AIRPORTS_URL =
@@ -45,10 +56,6 @@ const OPENFLIGHTS_AIRPORTS_URL =
 // OurAirports countries data – name → ISO 2-letter code
 const OURAIRPORTS_COUNTRIES_URL =
   'https://ourairports.com/data/countries.csv';
-
-// Local OpenSky static routes CSV (user must download + place here)
-// Expected to be named opensky_route_data.csv in the project root
-const OPENSKY_ROUTES_CSV_PATH = path.join(__dirname, 'opensky_route_data.csv');
 
 const LOCATIONS = {
   '1': { name: 'Port Elgin, Ontario', lat: 44.434, lon: -81.393 },
@@ -254,126 +261,6 @@ async function getAirportDisplay(icaoCode) {
 }
 
 // ---------------------------------------------------------------------
-// OpenSky static routes CSV (local file)
-// ---------------------------------------------------------------------
-
-let openskyRoutesByCallsign = null; // { CALLSIGN: { originIcao, destinationIcao } }
-
-function loadOpenSkyRoutesDb() {
-  if (openskyRoutesByCallsign !== null) return openskyRoutesByCallsign;
-
-  const map = {};
-  if (!fs.existsSync(OPENSKY_ROUTES_CSV_PATH)) {
-    console.warn(
-      '[OPENSKY ROUTES] File not found at',
-      OPENSKY_ROUTES_CSV_PATH,
-      '- skipping static routes.'
-    );
-    openskyRoutesByCallsign = map;
-    return openskyRoutesByCallsign;
-  }
-
-  try {
-    const raw = fs.readFileSync(OPENSKY_ROUTES_CSV_PATH, 'utf8');
-    const lines = raw.split(/\r?\n/);
-    if (lines.length < 2) {
-      openskyRoutesByCallsign = map;
-      return openskyRoutesByCallsign;
-    }
-
-    const header = parseCsvLine(lines[0]);
-    const lowerHeader = header.map((h) => (h || '').toLowerCase());
-
-    // Try to find relevant columns by name heuristic
-    const callsignIdx =
-      lowerHeader.indexOf('callsign') >= 0
-        ? lowerHeader.indexOf('callsign')
-        : lowerHeader.findIndex((h) => h.includes('callsign'));
-
-    const originIdxCandidates = [
-      'origin',
-      'originairport',
-      'origin_airport',
-      'departureairport',
-      'departure_airport',
-      'estdepartureairport'
-    ];
-    const destIdxCandidates = [
-      'destination',
-      'destinationairport',
-      'destination_airport',
-      'arrivalairport',
-      'arrival_airport',
-      'estarrivalairport'
-    ];
-
-    const originIdx = lowerHeader.findIndex((h) =>
-      originIdxCandidates.some((key) => h === key)
-    );
-    const destIdx = lowerHeader.findIndex((h) =>
-      destIdxCandidates.some((key) => h === key)
-    );
-
-    if (callsignIdx < 0 || originIdx < 0 || destIdx < 0) {
-      console.warn(
-        '[OPENSKY ROUTES] Could not find expected columns (callsign/origin/destination).'
-      );
-      openskyRoutesByCallsign = map;
-      return openskyRoutesByCallsign;
-    }
-
-    for (let i = 1; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
-      const cols = parseCsvLine(line);
-      if (cols.length <= destIdx) continue;
-
-      const cs = (cols[callsignIdx] || '').trim().toUpperCase();
-      const origin = (cols[originIdx] || '').trim().toUpperCase();
-      const dest = (cols[destIdx] || '').trim().toUpperCase();
-      if (!cs || !origin || !dest) continue;
-
-      // Normalize callsign by stripping spaces
-      const key = cs.replace(/\s+/g, '');
-      if (!key) continue;
-
-      if (!map[key]) {
-        map[key] = {
-          originIcao: origin,
-          destinationIcao: dest
-        };
-      }
-    }
-
-    console.log(
-      '[OPENSKY ROUTES] Loaded',
-      Object.keys(map).length,
-      'routes from CSV.'
-    );
-  } catch (err) {
-    console.error('[OPENSKY ROUTES] Error loading CSV:', err.message);
-  }
-
-  openskyRoutesByCallsign = map;
-  return openskyRoutesByCallsign;
-}
-
-async function fetchRouteFromOpenSkyStatic(callsignKey) {
-  const routes = loadOpenSkyRoutesDb();
-  if (!routes || !Object.keys(routes).length) return null;
-
-  // We store keys without spaces
-  const keyNoSpaces = callsignKey.replace(/\s+/g, '');
-  const hit = routes[keyNoSpaces];
-  if (!hit) return null;
-
-  return {
-    originIcao: hit.originIcao,
-    destinationIcao: hit.destinationIcao
-  };
-}
-
-// ---------------------------------------------------------------------
 // ADSB.lol fetch
 // ---------------------------------------------------------------------
 
@@ -393,7 +280,7 @@ async function fetchAircraftRaw(lat, lon, radiusNm) {
 }
 
 // ---------------------------------------------------------------------
-// Route lookup via adsbdb.com + AviationStack + OpenSky static
+// Route lookup via adsbdb.com + AeroDataBox + AviationStack
 // ---------------------------------------------------------------------
 
 const routeCache = {}; // callsign -> { originIcao, destinationIcao } or null
@@ -423,6 +310,81 @@ async function fetchRouteFromAdsbdb(callsignKey) {
     };
   } catch (err) {
     console.error('[ROUTE] adsbdb error for', callsignKey, ':', err.message);
+    return null;
+  }
+}
+
+// Parse a callsign like "UAL991" into { airlineCode: 'UAL', flightNumber: '991' }
+function parseFlightNumberFromCallsign(callsignKey) {
+  if (!callsignKey) return null;
+  const cs = callsignKey.trim().toUpperCase();
+  const m = cs.match(/^([A-Z]{2,3})(\d{1,4})$/);
+  if (!m) return null;
+  return {
+    airlineCode: m[1],
+    flightNumber: m[2],
+    combined: `${m[1]}${m[2]}`
+  };
+}
+
+// AeroDataBox lookup: use flight number to get origin/destination ICAO
+async function fetchRouteFromAeroDataBox(callsignKey) {
+  if (!AERODATABOX_API_KEY) return null;
+
+  const parsed = parseFlightNumberFromCallsign(callsignKey);
+  if (!parsed) return null;
+
+  const url = AERODATABOX_FLIGHT_URL_TEMPLATE.replace(
+    '{flightNumber}',
+    encodeURIComponent(parsed.combined)
+  );
+
+  try {
+    const resp = await axios.get(url, {
+      timeout: 8000,
+      headers: {
+        'X-RapidAPI-Key': AERODATABOX_API_KEY,
+        'X-RapidAPI-Host': AERODATABOX_HOST
+      }
+    });
+
+    const body = resp.data;
+    // AeroDataBox often returns an array of flights
+    const flights = Array.isArray(body) ? body : body.flights || body.data || [];
+    if (!Array.isArray(flights) || flights.length === 0) return null;
+
+    const f = flights[0];
+
+    // Try to extract departure/arrival ICAO codes in a generic way
+    const dep = f.departure || f.dep || {};
+    const arr = f.arrival || f.arr || {};
+
+    const originIcao =
+      dep.icao || dep.icaoCode || dep.icao_code || dep.airportIcao || null;
+    const destinationIcao =
+      arr.icao || arr.icaoCode || arr.icao_code || arr.airportIcao || null;
+
+    if (!originIcao || !destinationIcao) {
+      return null;
+    }
+
+    return {
+      originIcao: String(originIcao).toUpperCase(),
+      destinationIcao: String(destinationIcao).toUpperCase()
+    };
+  } catch (err) {
+    if (err.response) {
+      console.error(
+        '[ROUTE] AeroDataBox error for',
+        callsignKey,
+        'status=',
+        err.response.status,
+        'data=',
+        JSON.stringify(err.response.data)
+      );
+    } else {
+      console.error('[ROUTE] AeroDataBox request failed:', err.message);
+    }
     return null;
   }
 }
@@ -494,18 +456,18 @@ async function fetchRouteForCallsign(callsign) {
     return fromAdsbdb;
   }
 
-  // 2) AviationStack
+  // 2) AeroDataBox
+  const fromAeroDataBox = await fetchRouteFromAeroDataBox(key);
+  if (fromAeroDataBox) {
+    routeCache[key] = fromAeroDataBox;
+    return fromAeroDataBox;
+  }
+
+  // 3) AviationStack
   const fromAviationStack = await fetchRouteFromAviationStack(key);
   if (fromAviationStack) {
     routeCache[key] = fromAviationStack;
     return fromAviationStack;
-  }
-
-  // 3) OpenSky static routes (local CSV)
-  const fromOpenSky = await fetchRouteFromOpenSkyStatic(key);
-  if (fromOpenSky) {
-    routeCache[key] = fromOpenSky;
-    return fromOpenSky;
   }
 
   routeCache[key] = null;
