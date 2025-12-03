@@ -91,6 +91,27 @@ const AIRLINE_BY_ICAO_PREFIX = {
   SWA: 'Southwest Airlines'
 };
 
+// ICAO -> IATA airline code map (for smarter callsign parsing)
+const ICAO_TO_IATA = {
+  ACA: 'AC',
+  JZA: 'QK',
+  ROU: 'RV',
+  WJA: 'WS',
+  WEN: 'WR',
+  TSC: 'TS',
+  POE: 'PD',
+  QTR: 'QR',
+  BAW: 'BA',
+  AFR: 'AF',
+  DLH: 'LH',
+  KLM: 'KL',
+  UAL: 'UA',
+  AAL: 'AA',
+  DAL: 'DL',
+  JBU: 'B6',
+  SWA: 'WN'
+};
+
 // ---------------------------------------------------------------------
 // MATH HELPERS
 // ---------------------------------------------------------------------
@@ -285,6 +306,39 @@ async function fetchAircraftRaw(lat, lon, radiusNm) {
 
 const routeCache = {}; // callsign -> { originIcao, destinationIcao } or null
 
+// Per-airline source success stats: { airlineKey: { adsbdb: n, aerodatabox: n, aviationstack: n } }
+const routeSourceStats = {};
+
+function getAirlineKeyFromCallsign(callsignKey) {
+  if (!callsignKey) return 'DEFAULT';
+  const cs = callsignKey.trim().toUpperCase();
+  const m = cs.match(/^([A-Z]+)/);
+  return m ? m[1] : 'DEFAULT';
+}
+
+function recordRouteSourceSuccess(airlineKey, sourceName) {
+  if (!routeSourceStats[airlineKey]) {
+    routeSourceStats[airlineKey] = { adsbdb: 0, aerodatabox: 0, aviationstack: 0 };
+  }
+  if (routeSourceStats[airlineKey][sourceName] == null) {
+    routeSourceStats[airlineKey][sourceName] = 0;
+  }
+  routeSourceStats[airlineKey][sourceName] += 1;
+}
+
+function getRouteSourceOrderForAirline(airlineKey) {
+  const defaultOrder = ['adsbdb', 'aerodatabox', 'aviationstack'];
+  const stats = routeSourceStats[airlineKey];
+  if (!stats) return defaultOrder;
+
+  // Sort sources by descending success count, but keep stable default ordering
+  return [...defaultOrder].sort((a, b) => {
+    const sa = stats[a] || 0;
+    const sb = stats[b] || 0;
+    return sb - sa;
+  });
+}
+
 async function fetchRouteFromAdsbdb(callsignKey) {
   const url = ADSBDB_ROUTE_URL + encodeURIComponent(callsignKey);
 
@@ -314,91 +368,139 @@ async function fetchRouteFromAdsbdb(callsignKey) {
   }
 }
 
-// Parse a callsign like "UAL991" into { airlineCode: 'UAL', flightNumber: '991' }
+// Parse a callsign like "UAL991" into { icaoCode: 'UAL', flightNumber: '991' }
 function parseFlightNumberFromCallsign(callsignKey) {
   if (!callsignKey) return null;
   const cs = callsignKey.trim().toUpperCase();
   const m = cs.match(/^([A-Z]{2,3})(\d{1,4})$/);
   if (!m) return null;
   return {
-    airlineCode: m[1],
-    flightNumber: m[2],
-    combined: `${m[1]}${m[2]}`
+    icaoCode: m[1],
+    flightNumber: m[2]
   };
 }
 
-// AeroDataBox lookup: use flight number to get origin/destination ICAO
+// Build candidate flight numbers for AeroDataBox / similar:
+// e.g. UAL991 and UA991 if we know UAL -> UA
+function buildFlightNumberCandidates(callsignKey) {
+  const parsed = parseFlightNumberFromCallsign(callsignKey);
+  if (!parsed) return [];
+
+  const candidates = new Set();
+  const { icaoCode, flightNumber } = parsed;
+
+  // ICAO-style callsign as-is
+  candidates.add(`${icaoCode}${flightNumber}`);
+
+  // If we know IATA code, also add that
+  const iata = ICAO_TO_IATA[icaoCode];
+  if (iata) {
+    candidates.add(`${iata}${flightNumber}`);
+  }
+
+  return Array.from(candidates);
+}
+
+// AeroDataBox lookup: use flight number candidates to get origin/destination ICAO
 async function fetchRouteFromAeroDataBox(callsignKey) {
   if (!AERODATABOX_API_KEY) return null;
 
-  const parsed = parseFlightNumberFromCallsign(callsignKey);
-  if (!parsed) return null;
+  const candidates = buildFlightNumberCandidates(callsignKey);
+  if (!candidates.length) return null;
 
-  const url = AERODATABOX_FLIGHT_URL_TEMPLATE.replace(
-    '{flightNumber}',
-    encodeURIComponent(parsed.combined)
-  );
+  for (const flightNumber of candidates) {
+    const url = AERODATABOX_FLIGHT_URL_TEMPLATE.replace(
+      '{flightNumber}',
+      encodeURIComponent(flightNumber)
+    );
 
-  try {
-    const resp = await axios.get(url, {
-      timeout: 8000,
-      headers: {
-        'X-RapidAPI-Key': AERODATABOX_API_KEY,
-        'X-RapidAPI-Host': AERODATABOX_HOST
+    try {
+      const resp = await axios.get(url, {
+        timeout: 8000,
+        headers: {
+          'X-RapidAPI-Key': AERODATABOX_API_KEY,
+          'X-RapidAPI-Host': AERODATABOX_HOST
+        }
+      });
+
+      const body = resp.data;
+      // AeroDataBox often returns an array of flights, but may also wrap in an object
+      const flights = Array.isArray(body) ? body : body.flights || body.data || [];
+      if (!Array.isArray(flights) || flights.length === 0) continue;
+
+      const f = flights[0];
+
+      // Try to extract departure/arrival ICAO codes in a generic way
+      const dep = f.departure || f.dep || {};
+      const arr = f.arrival || f.arr || {};
+
+      const originIcao =
+        dep.icao || dep.icaoCode || dep.icao_code || dep.airportIcao || null;
+      const destinationIcao =
+        arr.icao || arr.icaoCode || arr.icao_code || arr.airportIcao || null;
+
+      if (!originIcao || !destinationIcao) {
+        continue;
       }
-    });
 
-    const body = resp.data;
-    // AeroDataBox often returns an array of flights
-    const flights = Array.isArray(body) ? body : body.flights || body.data || [];
-    if (!Array.isArray(flights) || flights.length === 0) return null;
-
-    const f = flights[0];
-
-    // Try to extract departure/arrival ICAO codes in a generic way
-    const dep = f.departure || f.dep || {};
-    const arr = f.arrival || f.arr || {};
-
-    const originIcao =
-      dep.icao || dep.icaoCode || dep.icao_code || dep.airportIcao || null;
-    const destinationIcao =
-      arr.icao || arr.icaoCode || arr.icao_code || arr.airportIcao || null;
-
-    if (!originIcao || !destinationIcao) {
-      return null;
+      return {
+        originIcao: String(originIcao).toUpperCase(),
+        destinationIcao: String(destinationIcao).toUpperCase()
+      };
+    } catch (err) {
+      if (err.response) {
+        console.error(
+          '[ROUTE] AeroDataBox error for',
+          callsignKey,
+          'candidate=',
+          flightNumber,
+          'status=',
+          err.response.status,
+          'data=',
+          JSON.stringify(err.response.data)
+        );
+      } else {
+        console.error(
+          '[ROUTE] AeroDataBox request failed for',
+          callsignKey,
+          'candidate=',
+          flightNumber,
+          ':',
+          err.message
+        );
+      }
+      // Try next candidate if available
     }
-
-    return {
-      originIcao: String(originIcao).toUpperCase(),
-      destinationIcao: String(destinationIcao).toUpperCase()
-    };
-  } catch (err) {
-    if (err.response) {
-      console.error(
-        '[ROUTE] AeroDataBox error for',
-        callsignKey,
-        'status=',
-        err.response.status,
-        'data=',
-        JSON.stringify(err.response.data)
-      );
-    } else {
-      console.error('[ROUTE] AeroDataBox request failed:', err.message);
-    }
-    return null;
   }
+
+  return null;
 }
 
 async function fetchRouteFromAviationStack(callsignKey) {
   if (!AVIATIONSTACK_API_KEY) return null;
 
+  // Try to also provide a flight_iata parameter when possible
+  const parsed = parseFlightNumberFromCallsign(callsignKey);
+  let flightIata = null;
+  if (parsed) {
+    const iata = ICAO_TO_IATA[parsed.icaoCode];
+    if (iata) {
+      flightIata = `${iata}${parsed.flightNumber}`;
+    }
+  }
+
+  const params = {
+    access_key: AVIATIONSTACK_API_KEY,
+    flight_icao: callsignKey
+  };
+  if (flightIata) {
+    params.flight_iata = flightIata;
+  }
+
   try {
     const resp = await axios.get(AVIATIONSTACK_FLIGHTS_URL, {
       timeout: 8000,
-      params: {
-        access_key: AVIATIONSTACK_API_KEY,
-        flight_icao: callsignKey
-      }
+      params
     });
 
     const body = resp.data || {};
@@ -449,25 +551,25 @@ async function fetchRouteForCallsign(callsign) {
     return routeCache[key];
   }
 
-  // 1) adsbdb
-  const fromAdsbdb = await fetchRouteFromAdsbdb(key);
-  if (fromAdsbdb) {
-    routeCache[key] = fromAdsbdb;
-    return fromAdsbdb;
-  }
+  const airlineKey = getAirlineKeyFromCallsign(key);
+  const sourceOrder = getRouteSourceOrderForAirline(airlineKey);
 
-  // 2) AeroDataBox
-  const fromAeroDataBox = await fetchRouteFromAeroDataBox(key);
-  if (fromAeroDataBox) {
-    routeCache[key] = fromAeroDataBox;
-    return fromAeroDataBox;
-  }
+  for (const source of sourceOrder) {
+    let result = null;
 
-  // 3) AviationStack
-  const fromAviationStack = await fetchRouteFromAviationStack(key);
-  if (fromAviationStack) {
-    routeCache[key] = fromAviationStack;
-    return fromAviationStack;
+    if (source === 'adsbdb') {
+      result = await fetchRouteFromAdsbdb(key);
+    } else if (source === 'aerodatabox') {
+      result = await fetchRouteFromAeroDataBox(key);
+    } else if (source === 'aviationstack') {
+      result = await fetchRouteFromAviationStack(key);
+    }
+
+    if (result && result.originIcao && result.destinationIcao) {
+      routeCache[key] = result;
+      recordRouteSourceSuccess(airlineKey, source);
+      return result;
+    }
   }
 
   routeCache[key] = null;
