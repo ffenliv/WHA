@@ -425,16 +425,19 @@ async function fetchHistory() {
   const table = document.getElementById('historyTable');
   const tbody = document.getElementById('historyBody');
 
-  if (!dateInput || !statusEl || !table || !tbody) {
+  if (!statusEl || !table || !tbody) {
     return;
   }
 
-  const date = dateInput.value || todayISO();
+  const rawDate = dateInput ? dateInput.value : '';
+  const hasDateFilter = !!rawDate;
   const flightKey = flightKeyInput ? flightKeyInput.value.trim() : '';
   const limit = limitInput ? limitInput.value : '500';
 
   const url = new URL('/api/flight-history', window.location.origin);
-  url.searchParams.set('date', date);
+  if (hasDateFilter) {
+    url.searchParams.set('date', rawDate);
+  }
   url.searchParams.set('limit', limit || '500');
   if (flightKey) {
     url.searchParams.set('flightKey', flightKey);
@@ -451,12 +454,16 @@ async function fetchHistory() {
     const data = await resp.json();
 
     if (!Array.isArray(data) || data.length === 0) {
-      statusEl.textContent = `No history entries found for ${date}.`;
+      statusEl.textContent = hasDateFilter
+        ? `No history entries found for ${rawDate}.`
+        : 'No history entries found.';
       table.style.display = 'none';
       return;
     }
 
-    statusEl.textContent = `Loaded ${data.length} entr${data.length === 1 ? 'y' : 'ies'} for ${date}.`;
+    statusEl.textContent = hasDateFilter
+      ? `Loaded ${data.length} entr${data.length === 1 ? 'y' : 'ies'} for ${rawDate}.`
+      : `Loaded ${data.length} entr${data.length === 1 ? 'y' : 'ies'} (all dates).`;
 
     for (const entry of data) {
       const tr = document.createElement('tr');
@@ -571,11 +578,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // History tab wiring
-  const historyDate = document.getElementById('historyDate');
   const historyRefreshBtn = document.getElementById('historyRefreshBtn');
-  if (historyDate) {
-    historyDate.value = todayISO();
-  }
   if (historyRefreshBtn) {
     historyRefreshBtn.addEventListener('click', () => {
       fetchHistory();
