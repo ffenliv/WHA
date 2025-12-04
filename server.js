@@ -13,7 +13,6 @@ require('dotenv').config();
 
 const express = require('express');
 const path = require('path');
-const fs = require('fs');
 const axios = require('axios');
 
 const app = express();
@@ -111,7 +110,9 @@ const ICAO_TO_IATA = {
 // Earth radius for distance calc
 const EARTH_RADIUS_KM = 6371;
 
-const FLIGHT_LOG_FILE = path.join(__dirname, 'flight_history.jsonl');
+const FLIGHT_HISTORY = [];
+const FLIGHT_HISTORY_MAX_ENTRIES = 20000;
+
 let seenFlightsToday = new Set();
 let currentLogDate = getTodayString();
 
@@ -119,37 +120,11 @@ function getTodayString() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function loadSeenFlightsForDate(dateStr) {
-  try {
-    if (!fs.existsSync(FLIGHT_LOG_FILE)) {
-      return;
-    }
-    const contents = fs.readFileSync(FLIGHT_LOG_FILE, 'utf8');
-    if (!contents) return;
-
-    const lines = contents.split(/\r?\n/);
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      try {
-        const entry = JSON.parse(line);
-        if (entry.date === dateStr && entry.flightKey) {
-          seenFlightsToday.add(entry.flightKey);
-        }
-      } catch (e) {
-        // ignore malformed lines
-      }
-    }
-  } catch (err) {
-    console.error('[HISTORY] Failed to load flight history:', err.message);
-  }
-}
-
 function ensureFlightHistoryState() {
   const today = getTodayString();
   if (today !== currentLogDate) {
     currentLogDate = today;
     seenFlightsToday = new Set();
-    loadSeenFlightsForDate(currentLogDate);
   }
 }
 
@@ -167,14 +142,15 @@ function logFlightHistory(aircraftList, context) {
 
   ensureFlightHistoryState();
   const dateStr = currentLogDate;
-  const linesToAppend = [];
 
   for (const ac of aircraftList) {
     const flightKey = getFlightKey(ac);
     if (!flightKey) continue;
-    if (seenFlightsToday.has(flightKey)) continue;
 
-    seenFlightsToday.add(flightKey);
+    const dedupeKey = dateStr + ':' + flightKey;
+    if (seenFlightsToday.has(dedupeKey)) continue;
+
+    seenFlightsToday.add(dedupeKey);
 
     const entry = {
       date: dateStr,
@@ -189,23 +165,29 @@ function logFlightHistory(aircraftList, context) {
       destinationIcao: ac.destinationIcao || null
     };
 
-    linesToAppend.push(JSON.stringify(entry));
-  }
-
-  if (!linesToAppend.length) return;
-
-  fs.appendFile(FLIGHT_LOG_FILE, linesToAppend.join('\n') + '\n', (err) => {
-    if (err) {
-      console.error('[HISTORY] Error writing flight history:', err.message);
-    } else {
-      console.log(`[HISTORY] Logged ${linesToAppend.length} new flight(s) for ${dateStr}.`);
+    FLIGHT_HISTORY.push(entry);
+    if (FLIGHT_HISTORY.length > FLIGHT_HISTORY_MAX_ENTRIES) {
+      FLIGHT_HISTORY.shift();
     }
-  });
+  }
 }
 
-loadSeenFlightsForDate(currentLogDate);
+function queryFlightHistory(options) {
+  const dateFilter = options && options.dateFilter ? String(options.dateFilter).trim() : null;
+  const flightKeyFilter = options && options.flightKeyFilter ? String(options.flightKeyFilter).trim() : null;
+  const limit = options && options.limit ? options.limit : 500;
 
+  const results = [];
+  for (let i = FLIGHT_HISTORY.length - 1; i >= 0; i--) {
+    const entry = FLIGHT_HISTORY[i];
+    if (dateFilter && entry.date !== dateFilter) continue;
+    if (flightKeyFilter && entry.flightKey !== flightKeyFilter) continue;
 
+    results.push(entry);
+    if (results.length >= limit) break;
+  }
+  return results.reverse();
+}
 
 // ---------------------------------------------------------------------
 // Helpers
@@ -884,44 +866,21 @@ async function getAircraftForLocationKey(locationKey, radiusKmRaw) {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Flight history API - view logged flights
+// Flight history API - in-memory (resets on server restart)
 app.get('/api/flight-history', (req, res) => {
   const rawDate = req.query.date;
   const dateFilter = rawDate ? String(rawDate).trim() : null; // if null => all dates
   const flightKeyFilter = req.query.flightKey ? String(req.query.flightKey).trim() : null;
   const limit = req.query.limit ? parseInt(req.query.limit, 10) || 500 : 500;
 
-  if (!fs.existsSync(FLIGHT_LOG_FILE)) {
-    return res.json([]);
-  }
-
-  fs.readFile(FLIGHT_LOG_FILE, 'utf8', (err, data) => {
-    if (err) {
-      console.error('[HISTORY] Error reading flight history file:', err.message);
-      return res.status(500).json({ error: 'Failed to read flight history' });
-    }
-
-    const lines = data.split(/\r?\n/);
-    const results = [];
-
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      try {
-        const entry = JSON.parse(line);
-        if (dateFilter && entry.date !== dateFilter) continue;
-        if (flightKeyFilter && entry.flightKey !== flightKeyFilter) continue;
-
-        results.push(entry);
-        if (results.length >= limit) break;
-      } catch (e) {
-        // ignore malformed lines
-      }
-    }
-
-    res.json(results);
+  const results = queryFlightHistory({
+    dateFilter,
+    flightKeyFilter,
+    limit
   });
-});
 
+  res.json(results);
+});
 
 app.get('/api/aircraft', async (req, res) => {
   const location = req.query.location || '2';
