@@ -195,10 +195,12 @@ function logFlightHistory(aircraftList, context) {
   if (!linesToAppend.length) return;
 
   fs.appendFile(FLIGHT_LOG_FILE, linesToAppend.join('\n') + '\n', (err) => {
-    if (err) {
-      console.error('[HISTORY] Error writing flight history:', err.message);
-    }
-  });
+  if (err) {
+    console.error('[HISTORY] Error writing flight history:', err.message);
+  } else {
+    console.log(`[HISTORY] Logged ${linesToAppend.length} new flight(s) for ${dateStr}.`);
+  }
+});
 }
 
 loadSeenFlightsForDate(currentLogDate);
