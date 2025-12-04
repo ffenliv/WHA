@@ -882,6 +882,44 @@ async function getAircraftForLocationKey(locationKey, radiusKmRaw) {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+
+// Flight history API - view logged flights (one row per flight per day)
+app.get('/api/flight-history', (req, res) => {
+  const dateFilter = (req.query.date || getTodayString()).trim();
+  const flightKeyFilter = req.query.flightKey ? String(req.query.flightKey).trim() : null;
+  const limit = req.query.limit ? parseInt(req.query.limit, 10) || 500 : 500;
+
+  if (!fs.existsSync(FLIGHT_LOG_FILE)) {
+    return res.json([]);
+  }
+
+  fs.readFile(FLIGHT_LOG_FILE, 'utf8', (err, data) => {
+    if (err) {
+      console.error('[HISTORY] Error reading flight history file:', err.message);
+      return res.status(500).json({ error: 'Failed to read flight history' });
+    }
+
+    const lines = data.split(/\r?\n/);
+    const results = [];
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const entry = JSON.parse(line);
+        if (entry.date !== dateFilter) continue;
+        if (flightKeyFilter && entry.flightKey !== flightKeyFilter) continue;
+
+        results.push(entry);
+        if (results.length >= limit) break;
+      } catch (e) {
+        // ignore malformed lines
+      }
+    }
+
+    res.json(results);
+  });
+});
+
 app.get('/api/aircraft', async (req, res) => {
   const location = req.query.location || '2';
   const radiusKm = req.query.radiusKm;
