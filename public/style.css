@@ -7,7 +7,7 @@ h1 {
   margin-bottom: 0.3em;
 }
 
-controls {
+.controls {
   margin: 1em 0;
   display: flex;
   flex-wrap: wrap;
@@ -31,6 +31,40 @@ button {
   color: #444;
 }
 
+/* Tabs */
+.tabs {
+  display: flex;
+  border-bottom: 1px solid #ccc;
+  margin-bottom: 0.5em;
+}
+
+.tab-button {
+  border: none;
+  background: #f5f5f5;
+  padding: 0.5em 1em;
+  cursor: pointer;
+  border-right: 1px solid #ddd;
+  font-size: 0.95rem;
+}
+
+.tab-button:last-child {
+  border-right: none;
+}
+
+.tab-button.active {
+  background: #ffffff;
+  border-bottom: 2px solid #0078d4;
+  font-weight: 600;
+}
+
+.tab-panel {
+  display: none;
+}
+
+.tab-panel.active {
+  display: block;
+}
+
 /* Map container */
 #map {
   width: 100%;
@@ -39,7 +73,7 @@ button {
   border: 1px solid #ccc;
 }
 
-/* Aircraft arrow marker (Leaflet divIcon) */
+/* Triangle aircraft icon (Leaflet divIcon) */
 .aircraft-arrow-icon {
   text-align: center;
   pointer-events: auto;
@@ -68,11 +102,11 @@ button {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
 
-/* Slight spacing between lines inside the label */
 .aircraft-label br {
   line-height: 1.3;
 }
 
+/* Table */
 table {
   border-collapse: collapse;
   width: 100%;
@@ -99,7 +133,37 @@ th.sortable {
 }
 
 th.sortable::after {
-  content: ' \25B4\25BE'; /* up/down triangles hint */
+  content: ' \25B4\25BE';
   font-size: 0.75em;
   margin-left: 0.25em;
+}
+
+
+/* History tab styles */
+.history-controls {
+  margin: 1em 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em 1em;
+  align-items: center;
+}
+
+.history-controls label {
+  margin-right: 0.25em;
+}
+
+#historyStatus {
+  margin: 0.5em 0;
+  font-size: 0.9rem;
+  color: #444;
+}
+
+#historyTable {
+  margin-top: 0.5em;
+}
+
+.history-flight-meta,
+.history-meta {
+  font-size: 0.8rem;
+  color: #555;
 }
