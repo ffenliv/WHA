@@ -13,6 +13,7 @@ require('dotenv').config();
 
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const axios = require('axios');
 
 const app = express();
@@ -109,6 +110,99 @@ const ICAO_TO_IATA = {
 
 // Earth radius for distance calc
 const EARTH_RADIUS_KM = 6371;
+
+const FLIGHT_LOG_FILE = path.join(__dirname, 'flight_history.jsonl');
+let seenFlightsToday = new Set();
+let currentLogDate = getTodayString();
+
+function getTodayString() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function loadSeenFlightsForDate(dateStr) {
+  try {
+    if (!fs.existsSync(FLIGHT_LOG_FILE)) {
+      return;
+    }
+    const contents = fs.readFileSync(FLIGHT_LOG_FILE, 'utf8');
+    if (!contents) return;
+
+    const lines = contents.split(/\r?\n/);
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const entry = JSON.parse(line);
+        if (entry.date === dateStr && entry.flightKey) {
+          seenFlightsToday.add(entry.flightKey);
+        }
+      } catch (e) {
+        // ignore malformed lines
+      }
+    }
+  } catch (err) {
+    console.error('[HISTORY] Failed to load flight history:', err.message);
+  }
+}
+
+function ensureFlightHistoryState() {
+  const today = getTodayString();
+  if (today !== currentLogDate) {
+    currentLogDate = today;
+    seenFlightsToday = new Set();
+    loadSeenFlightsForDate(currentLogDate);
+  }
+}
+
+function getFlightKey(ac) {
+  if (!ac) return null;
+  const callsign = (ac.callsign || '').trim();
+  const icao24 = (ac.icao24 || '').trim();
+  if (callsign) return callsign;
+  if (icao24) return icao24;
+  return null;
+}
+
+function logFlightHistory(aircraftList, context) {
+  if (!Array.isArray(aircraftList) || aircraftList.length === 0) return;
+
+  ensureFlightHistoryState();
+  const dateStr = currentLogDate;
+  const linesToAppend = [];
+
+  for (const ac of aircraftList) {
+    const flightKey = getFlightKey(ac);
+    if (!flightKey) continue;
+    if (seenFlightsToday.has(flightKey)) continue;
+
+    seenFlightsToday.add(flightKey);
+
+    const entry = {
+      date: dateStr,
+      loggedAt: new Date().toISOString(),
+      flightKey,
+      callsign: ac.callsign || null,
+      icao24: ac.icao24 || null,
+      locationKey: context && context.locationKey,
+      locationName: context && context.locationName,
+      radiusKm: context && context.radiusKm,
+      originIcao: ac.originIcao || null,
+      destinationIcao: ac.destinationIcao || null
+    };
+
+    linesToAppend.push(JSON.stringify(entry));
+  }
+
+  if (!linesToAppend.length) return;
+
+  fs.appendFile(FLIGHT_LOG_FILE, linesToAppend.join('\n') + '\n', (err) => {
+    if (err) {
+      console.error('[HISTORY] Error writing flight history:', err.message);
+    }
+  });
+}
+
+loadSeenFlightsForDate(currentLogDate);
+
 
 // ---------------------------------------------------------------------
 // Helpers
@@ -763,6 +857,13 @@ async function getAircraftForLocationKey(locationKey, radiusKmRaw) {
   if (locationKey === '2') {
     cloudCeilingFt = await fetchCloudCeilingForLockeport();
   }
+
+
+  logFlightHistory(aircraft, {
+    locationKey,
+    locationName: loc.name,
+    radiusKm
+  });
 
   return {
     locationKey,
