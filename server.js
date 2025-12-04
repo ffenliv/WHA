@@ -195,15 +195,16 @@ function logFlightHistory(aircraftList, context) {
   if (!linesToAppend.length) return;
 
   fs.appendFile(FLIGHT_LOG_FILE, linesToAppend.join('\n') + '\n', (err) => {
-  if (err) {
-    console.error('[HISTORY] Error writing flight history:', err.message);
-  } else {
-    console.log(`[HISTORY] Logged ${linesToAppend.length} new flight(s) for ${dateStr}.`);
-  }
-});
+    if (err) {
+      console.error('[HISTORY] Error writing flight history:', err.message);
+    } else {
+      console.log(`[HISTORY] Logged ${linesToAppend.length} new flight(s) for ${dateStr}.`);
+    }
+  });
 }
 
 loadSeenFlightsForDate(currentLogDate);
+
 
 
 // ---------------------------------------------------------------------
@@ -860,7 +861,6 @@ async function getAircraftForLocationKey(locationKey, radiusKmRaw) {
     cloudCeilingFt = await fetchCloudCeilingForLockeport();
   }
 
-
   logFlightHistory(aircraft, {
     locationKey,
     locationName: loc.name,
@@ -884,10 +884,10 @@ async function getAircraftForLocationKey(locationKey, radiusKmRaw) {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-
-// Flight history API - view logged flights (one row per flight per day)
+// Flight history API - view logged flights
 app.get('/api/flight-history', (req, res) => {
-  const dateFilter = (req.query.date || getTodayString()).trim();
+  const rawDate = req.query.date;
+  const dateFilter = rawDate ? String(rawDate).trim() : null; // if null => all dates
   const flightKeyFilter = req.query.flightKey ? String(req.query.flightKey).trim() : null;
   const limit = req.query.limit ? parseInt(req.query.limit, 10) || 500 : 500;
 
@@ -908,7 +908,7 @@ app.get('/api/flight-history', (req, res) => {
       if (!line.trim()) continue;
       try {
         const entry = JSON.parse(line);
-        if (entry.date !== dateFilter) continue;
+        if (dateFilter && entry.date !== dateFilter) continue;
         if (flightKeyFilter && entry.flightKey !== flightKeyFilter) continue;
 
         results.push(entry);
@@ -921,6 +921,7 @@ app.get('/api/flight-history', (req, res) => {
     res.json(results);
   });
 });
+
 
 app.get('/api/aircraft', async (req, res) => {
   const location = req.query.location || '2';
