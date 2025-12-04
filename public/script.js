@@ -412,121 +412,6 @@ async function fetchAircraft() {
   }
 }
 
-
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-async function fetchHistory() {
-  const dateInput = document.getElementById('historyDate');
-  const flightKeyInput = document.getElementById('historyFlightKey');
-  const limitInput = document.getElementById('historyLimit');
-  const statusEl = document.getElementById('historyStatus');
-  const table = document.getElementById('historyTable');
-  const tbody = document.getElementById('historyBody');
-
-  if (!statusEl || !table || !tbody) {
-    return;
-  }
-
-  const rawDate = dateInput ? dateInput.value : '';
-  const hasDateFilter = !!rawDate;
-  const flightKey = flightKeyInput ? flightKeyInput.value.trim() : '';
-  const limit = limitInput ? limitInput.value : '500';
-
-  const url = new URL('/api/flight-history', window.location.origin);
-  if (hasDateFilter) {
-    url.searchParams.set('date', rawDate);
-  }
-  url.searchParams.set('limit', limit || '500');
-  if (flightKey) {
-    url.searchParams.set('flightKey', flightKey);
-  }
-
-  statusEl.textContent = 'Loading history...';
-  tbody.innerHTML = '';
-
-  try {
-    const resp = await fetch(url.toString());
-    if (!resp.ok) {
-      throw new Error('HTTP ' + resp.status);
-    }
-    const data = await resp.json();
-
-    if (!Array.isArray(data) || data.length === 0) {
-      statusEl.textContent = hasDateFilter
-        ? `No history entries found for ${rawDate}.`
-        : 'No history entries found.';
-      table.style.display = 'none';
-      return;
-    }
-
-    statusEl.textContent = hasDateFilter
-      ? `Loaded ${data.length} entr${data.length === 1 ? 'y' : 'ies'} for ${rawDate}.`
-      : `Loaded ${data.length} entr${data.length === 1 ? 'y' : 'ies'} (all dates).`;
-
-    for (const entry of data) {
-      const tr = document.createElement('tr');
-
-      const dateTd = document.createElement('td');
-      dateTd.textContent = entry.date || '';
-      tr.appendChild(dateTd);
-
-      const flightTd = document.createElement('td');
-      const keyDiv = document.createElement('div');
-      keyDiv.textContent = entry.flightKey || '';
-      const metaDiv = document.createElement('div');
-      metaDiv.className = 'history-flight-meta';
-      const metaParts = [];
-      if (entry.callsign) metaParts.push(entry.callsign);
-      if (entry.icao24) metaParts.push(entry.icao24);
-      metaDiv.textContent = metaParts.join(' · ');
-      flightTd.appendChild(keyDiv);
-      if (metaDiv.textContent) {
-        flightTd.appendChild(metaDiv);
-      }
-      tr.appendChild(flightTd);
-
-      const locTd = document.createElement('td');
-      const locName = entry.locationName || '(unknown)';
-      const locParts = [];
-      if (entry.locationKey) locParts.push(`Key ${entry.locationKey}`);
-      if (entry.radiusKm != null) locParts.push(`Radius ${entry.radiusKm} km`);
-      const locMeta = locParts.join(' · ');
-      locTd.innerHTML = `<div>${locName}</div>`;
-      if (locMeta) {
-        const span = document.createElement('div');
-        span.className = 'history-meta';
-        span.textContent = locMeta;
-        locTd.appendChild(span);
-      }
-      tr.appendChild(locTd);
-
-      const routeTd = document.createElement('td');
-      const origin = entry.originIcao || '';
-      const dest = entry.destinationIcao || '';
-      if (origin || dest) {
-        routeTd.textContent = `${origin || '???'} → ${dest || '???'}`;
-      } else {
-        routeTd.textContent = '';
-      }
-      tr.appendChild(routeTd);
-
-      const loggedTd = document.createElement('td');
-      loggedTd.textContent = entry.loggedAt || '';
-      tr.appendChild(loggedTd);
-
-      tbody.appendChild(tr);
-    }
-
-    table.style.display = 'table';
-  } catch (err) {
-    console.error(err);
-    statusEl.textContent = 'Error loading history: ' + err.message;
-    table.style.display = 'none';
-  }
-}
-
 function initTabs() {
   const buttons = document.querySelectorAll('.tab-button');
   const panels = document.querySelectorAll('.tab-panel');
@@ -574,14 +459,6 @@ document.addEventListener('DOMContentLoaded', () => {
     distanceHeader.addEventListener('click', () => {
       distanceSortAscending = !distanceSortAscending;
       renderView();
-    });
-  }
-
-  // History tab wiring
-  const historyRefreshBtn = document.getElementById('historyRefreshBtn');
-  if (historyRefreshBtn) {
-    historyRefreshBtn.addEventListener('click', () => {
-      fetchHistory();
     });
   }
 
