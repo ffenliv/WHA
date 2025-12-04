@@ -103,6 +103,12 @@ function addAircraftMarker(ac) {
   const distText =
     ac.distanceKm != null ? ac.distanceKm.toFixed(1) + ' km' : 'N/A';
 
+  const flightAwareUrl = ac.callsign
+    ? `https://flightaware.com/live/flight/${encodeURIComponent(
+        ac.callsign.trim()
+      )}`
+    : null;
+
   const popupHtml = `
     <strong>${ac.callsign || ''}</strong><br/>
     Model: ${ac.model || ''}<br/>
@@ -111,9 +117,16 @@ function addAircraftMarker(ac) {
     Destination: ${ac.destinationDisplay || ''}<br/>
     Alt: ${altText}<br/>
     Speed: ${spdText}<br/>
-    Heading: ${ac.headingDeg != null ? ac.headingDeg.toFixed(0) + '°' : 'N/A'}<br/>
+    Heading: ${
+      ac.headingDeg != null ? ac.headingDeg.toFixed(0) + '°' : 'N/A'
+    }<br/>
     Distance: ${distText}<br/>
-    Look: ${lookText}
+    Look: ${lookText}<br/>
+    FlightAware: ${
+      flightAwareUrl
+        ? `<a href="${flightAwareUrl}" target="_blank" rel="noopener noreferrer">${ac.callsign}</a>`
+        : 'N/A'
+    }
   `;
 
   marker.bindPopup(popupHtml);

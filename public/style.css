@@ -7,7 +7,7 @@ h1 {
   margin-bottom: 0.3em;
 }
 
-.controls {
+controls {
   margin: 1em 0;
   display: flex;
   flex-wrap: wrap;
