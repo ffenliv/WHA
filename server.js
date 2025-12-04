@@ -1,15 +1,13 @@
 // server.js
 //
-// Node/Express app that:
-//  - Serves a web UI (public/index.html)
-//  - Provides /api/aircraft?location=1|2|3&radiusKm=...
-//  - Calls ADSB.lol for aircraft near the selected location
-//  - Computes bearing + direction from observer at 43.687737, -65.128691
-//  - Computes distance (km) from observer to each aircraft
-//  - Fetches cloud ceiling (ft) near Lockeport via AviationWeather METAR API (CYQI)
-//  - Uses adsbdb.com, AeroDataBox, and optionally AviationStack
-//    + OpenFlights / OurAirports data to infer origin/destination city+country
-//  - Frontend shows FL labels + route codes on map markers
+// Full-feature ADS-B viewer Node/Express app with:
+//  - ADSB.lol data source
+//  - Multiple locations & radius selection
+//  - Bearing/direction and distance from observer
+//  - Cloud ceiling from AviationWeather METAR (CYQI)
+//  - Route lookup via adsbdb + AeroDataBox + AviationStack
+//  - Airport city/country via OpenFlights + OurAirports
+//  - Frontend with map + data table in tabs, red triangle markers, FL labels, FlightAware link
 
 require('dotenv').config();
 
@@ -24,14 +22,13 @@ const PORT = process.env.PORT || 3000;
 // CONFIG
 // ---------------------------------------------------------------------
 
-// Default radius (km) if none provided
 const DEFAULT_RADIUS_KM = 100.0;
 const NM_PER_KM = 1.0 / 1.852; // 1 nautical mile ≈ 1.852 km
 
 const ADSBLOL_URL_TEMPLATE =
   'https://api.adsb.lol/v2/lat/{lat}/lon/{lon}/dist/{radius}';
 
-// adsbdb route API (no key)
+// adsbdb route API
 const ADSBDB_ROUTE_URL = 'https://api.adsbdb.com/v0/callsign/';
 
 // AviationStack API (optional, from environment)
@@ -39,39 +36,36 @@ const AVIATIONSTACK_API_KEY = process.env.AVIATION_STACK_API_KEY || null;
 const AVIATIONSTACK_FLIGHTS_URL = 'https://api.aviationstack.com/v1/flights';
 
 // AeroDataBox API via RapidAPI (optional, from environment)
-// You need: AERODATABOX_API_KEY and (optionally) AERODATABOX_HOST
-// Typical host: 'aerodatabox.p.rapidapi.com'
 const AERODATABOX_API_KEY = process.env.AERODATABOX_API_KEY || null;
 const AERODATABOX_HOST =
   process.env.AERODATABOX_HOST || 'aerodatabox.p.rapidapi.com';
 
-// AeroDataBox endpoint pattern for flight-by-number lookup
-// We'll call: GET /flights/number/{flightNumber}
 const AERODATABOX_FLIGHT_URL_TEMPLATE =
   'https://aerodatabox.p.rapidapi.com/flights/number/{flightNumber}';
 
-// OpenFlights airports data (CSV) – includes ICAO, city, country
+// OpenFlights airports data (CSV)
 const OPENFLIGHTS_AIRPORTS_URL =
   'https://raw.githubusercontent.com/jpatokal/openflights/master/data/airports.dat';
 
-// OurAirports countries data – name → ISO 2-letter code
+// OurAirports countries data
 const OURAIRPORTS_COUNTRIES_URL =
   'https://ourairports.com/data/countries.csv';
 
+// Observer locations
 const LOCATIONS = {
   '1': { name: 'Port Elgin, Ontario', lat: 44.434, lon: -81.393 },
   '2': { name: 'Lockeport, Nova Scotia', lat: 43.700, lon: -65.117 },
   '3': { name: 'Mississauga, Ontario', lat: 43.5890, lon: -79.6441 }
 };
 
-// Observer position for direction/bearing/distance
+// Observer for bearing/direction display
 const OBS_LAT = 43.687737;
 const OBS_LON = -65.128691;
 
-// Nearest METAR station to Lockeport (approx) – Yarmouth Airport
+// METAR station for cloud ceiling near Lockeport (Yarmouth)
 const LOCKEPORT_METAR_STATION = 'CYQI';
 
-// Simple airline mapping by callsign prefix (expand as desired)
+// Airline mapping by callsign prefix
 const AIRLINE_BY_ICAO_PREFIX = {
   ACA: 'Air Canada',
   JZA: 'Jazz Aviation',
@@ -92,7 +86,7 @@ const AIRLINE_BY_ICAO_PREFIX = {
   SWA: 'Southwest Airlines'
 };
 
-// ICAO -> IATA airline code map (for smarter callsign parsing)
+// ICAO -> IATA airline code
 const ICAO_TO_IATA = {
   ACA: 'AC',
   JZA: 'QK',
@@ -113,11 +107,11 @@ const ICAO_TO_IATA = {
   SWA: 'WN'
 };
 
-// Earth radius for distance calculation
+// Earth radius for distance calc
 const EARTH_RADIUS_KM = 6371;
 
 // ---------------------------------------------------------------------
-// MATH HELPERS
+// Helpers
 // ---------------------------------------------------------------------
 
 function toRad(deg) {
@@ -128,7 +122,6 @@ function toDeg(rad) {
   return (rad * 180) / Math.PI;
 }
 
-// Compute initial bearing from lat1/lon1 → lat2/lon2
 function bearingDegrees(lat1, lon1, lat2, lon2) {
   const phi1 = toRad(lat1);
   const phi2 = toRad(lat2);
@@ -140,10 +133,9 @@ function bearingDegrees(lat1, lon1, lat2, lon2) {
     Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLon);
 
   const brng = toDeg(Math.atan2(x, y));
-  return (brng + 360) % 360; // normalize to [0, 360)
+  return (brng + 360) % 360;
 }
 
-// Haversine distance in km
 function distanceKm(lat1, lon1, lat2, lon2) {
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
@@ -164,7 +156,7 @@ function bearingToDirection(brng) {
 }
 
 // ---------------------------------------------------------------------
-// CSV HELPER (simple parser that handles quoted fields)
+// CSV utilities
 // ---------------------------------------------------------------------
 
 function parseCsvLine(line) {
@@ -193,11 +185,11 @@ function parseCsvLine(line) {
 }
 
 // ---------------------------------------------------------------------
-// In-memory DB: airports + countries
+// Airport & Country DBs
 // ---------------------------------------------------------------------
 
-let airportsByIcao = null; // { ICAO: { city, countryName } }
-let countryNameToIso2 = null; // { "Canada": "CA", ... }
+let airportsByIcao = null;
+let countryNameToIso2 = null;
 
 async function loadCountryDb() {
   if (countryNameToIso2) return countryNameToIso2;
@@ -300,7 +292,7 @@ async function getAirportDisplay(icaoCode) {
 }
 
 // ---------------------------------------------------------------------
-// ADSB.lol fetch
+// ADSB.lol
 // ---------------------------------------------------------------------
 
 async function fetchAircraftRaw(lat, lon, radiusNm) {
@@ -319,13 +311,11 @@ async function fetchAircraftRaw(lat, lon, radiusNm) {
 }
 
 // ---------------------------------------------------------------------
-// Route lookup via adsbdb.com + AeroDataBox + AviationStack
+// Route lookup via adsbdb + AeroDataBox + AviationStack
 // ---------------------------------------------------------------------
 
 const routeCache = {}; // callsign -> { originIcao, destinationIcao } or null
-
-// Per-airline source success stats: { airlineKey: { adsbdb: n, aerodatabox: n, aviationstack: n } }
-const routeSourceStats = {};
+const routeSourceStats = {}; // airlineKey -> { adsbdb, aerodatabox, aviationstack }
 
 function getAirlineKeyFromCallsign(callsignKey) {
   if (!callsignKey) return 'DEFAULT';
@@ -336,7 +326,11 @@ function getAirlineKeyFromCallsign(callsignKey) {
 
 function recordRouteSourceSuccess(airlineKey, sourceName) {
   if (!routeSourceStats[airlineKey]) {
-    routeSourceStats[airlineKey] = { adsbdb: 0, aerodatabox: 0, aviationstack: 0 };
+    routeSourceStats[airlineKey] = {
+      adsbdb: 0,
+      aerodatabox: 0,
+      aviationstack: 0
+    };
   }
   if (routeSourceStats[airlineKey][sourceName] == null) {
     routeSourceStats[airlineKey][sourceName] = 0;
@@ -349,7 +343,6 @@ function getRouteSourceOrderForAirline(airlineKey) {
   const stats = routeSourceStats[airlineKey];
   if (!stats) return defaultOrder;
 
-  // Sort sources by descending success count, but keep stable default ordering
   return [...defaultOrder].sort((a, b) => {
     const sa = stats[a] || 0;
     const sb = stats[b] || 0;
@@ -386,7 +379,6 @@ async function fetchRouteFromAdsbdb(callsignKey) {
   }
 }
 
-// Parse a callsign like "UAL991" into { icaoCode: 'UAL', flightNumber: '991' }
 function parseFlightNumberFromCallsign(callsignKey) {
   if (!callsignKey) return null;
   const cs = callsignKey.trim().toUpperCase();
@@ -398,8 +390,6 @@ function parseFlightNumberFromCallsign(callsignKey) {
   };
 }
 
-// Build candidate flight numbers for AeroDataBox / similar:
-// e.g. UAL991 and UA991 if we know UAL -> UA
 function buildFlightNumberCandidates(callsignKey) {
   const parsed = parseFlightNumberFromCallsign(callsignKey);
   if (!parsed) return [];
@@ -407,10 +397,8 @@ function buildFlightNumberCandidates(callsignKey) {
   const candidates = new Set();
   const { icaoCode, flightNumber } = parsed;
 
-  // ICAO-style callsign as-is
   candidates.add(`${icaoCode}${flightNumber}`);
 
-  // If we know IATA code, also add that
   const iata = ICAO_TO_IATA[icaoCode];
   if (iata) {
     candidates.add(`${iata}${flightNumber}`);
@@ -419,7 +407,6 @@ function buildFlightNumberCandidates(callsignKey) {
   return Array.from(candidates);
 }
 
-// AeroDataBox lookup: use flight number candidates to get origin/destination ICAO
 async function fetchRouteFromAeroDataBox(callsignKey) {
   if (!AERODATABOX_API_KEY) return null;
 
@@ -442,13 +429,10 @@ async function fetchRouteFromAeroDataBox(callsignKey) {
       });
 
       const body = resp.data;
-      // AeroDataBox often returns an array of flights, but may also wrap in an object
       const flights = Array.isArray(body) ? body : body.flights || body.data || [];
       if (!Array.isArray(flights) || flights.length === 0) continue;
 
       const f = flights[0];
-
-      // Try to extract departure/arrival ICAO codes in a generic way
       const dep = f.departure || f.dep || {};
       const arr = f.arrival || f.arr || {};
 
@@ -487,7 +471,6 @@ async function fetchRouteFromAeroDataBox(callsignKey) {
           err.message
         );
       }
-      // Try next candidate if available
     }
   }
 
@@ -497,7 +480,6 @@ async function fetchRouteFromAeroDataBox(callsignKey) {
 async function fetchRouteFromAviationStack(callsignKey) {
   if (!AVIATIONSTACK_API_KEY) return null;
 
-  // Try to also provide a flight_iata parameter when possible
   const parsed = parseFlightNumberFromCallsign(callsignKey);
   let flightIata = null;
   if (parsed) {
@@ -595,7 +577,7 @@ async function fetchRouteForCallsign(callsign) {
 }
 
 // ---------------------------------------------------------------------
-// AIRCRAFT FORMATTER
+// Aircraft formatting
 // ---------------------------------------------------------------------
 
 function inferAirlineFromCallsign(flight) {
@@ -708,7 +690,7 @@ async function enrichAircraftWithRoutes(aircraftList) {
 }
 
 // ---------------------------------------------------------------------
-// Cloud ceiling via AviationWeather METAR API (free, no key)
+// Cloud ceiling via AviationWeather METAR
 // ---------------------------------------------------------------------
 
 async function fetchCloudCeilingForLockeport() {
@@ -756,7 +738,7 @@ async function fetchCloudCeilingForLockeport() {
 }
 
 // ---------------------------------------------------------------------
-// Combine everything for one location
+// Combined fetch
 // ---------------------------------------------------------------------
 
 async function getAircraftForLocationKey(locationKey, radiusKmRaw) {
@@ -766,7 +748,6 @@ async function getAircraftForLocationKey(locationKey, radiusKmRaw) {
   if (!Number.isFinite(radiusKm) || radiusKm <= 0) {
     radiusKm = DEFAULT_RADIUS_KM;
   }
-  // Clamp radius to a reasonable range
   if (radiusKm < 1) radiusKm = 1;
   if (radiusKm > 2000) radiusKm = 2000;
 
@@ -795,7 +776,7 @@ async function getAircraftForLocationKey(locationKey, radiusKmRaw) {
 }
 
 // ---------------------------------------------------------------------
-// EXPRESS SETUP
+// Express
 // ---------------------------------------------------------------------
 
 app.use(express.static(path.join(__dirname, 'public')));
