@@ -93,3 +93,13 @@ th {
 tbody tr:nth-child(even) {
   background: #fafafa;
 }
+
+th.sortable {
+  cursor: pointer;
+}
+
+th.sortable::after {
+  content: ' \25B4\25BE'; /* up/down triangles hint */
+  font-size: 0.75em;
+  margin-left: 0.25em;
+}

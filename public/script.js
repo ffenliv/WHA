@@ -2,6 +2,8 @@
 
 let map;
 let markersLayer;
+let lastAircraft = [];
+let distanceSortAscending = true;
 
 function initMap() {
   const defaultLat = 43.700;
@@ -98,6 +100,8 @@ function addAircraftMarker(ac) {
     ac.lookDirection && ac.bearingDeg != null
       ? `${ac.lookDirection} (${ac.bearingDeg.toFixed(1)}°)`
       : 'N/A';
+  const distText =
+    ac.distanceKm != null ? ac.distanceKm.toFixed(1) + ' km' : 'N/A';
 
   const popupHtml = `
     <strong>${ac.callsign || ''}</strong><br/>
@@ -108,6 +112,7 @@ function addAircraftMarker(ac) {
     Alt: ${altText}<br/>
     Speed: ${spdText}<br/>
     Heading: ${ac.headingDeg != null ? ac.headingDeg.toFixed(0) + '°' : 'N/A'}<br/>
+    Distance: ${distText}<br/>
     Look: ${lookText}
   `;
 
@@ -115,18 +120,74 @@ function addAircraftMarker(ac) {
   marker.addTo(markersLayer);
 }
 
+function renderView() {
+  const tbody = document.getElementById('resultsBody');
+  if (!tbody) return;
+
+  tbody.innerHTML = '';
+  clearMarkers();
+
+  if (!lastAircraft || lastAircraft.length === 0) return;
+
+  const sorted = [...lastAircraft];
+
+  sorted.sort((a, b) => {
+    const da = a.distanceKm != null ? a.distanceKm : Infinity;
+    const db = b.distanceKm != null ? b.distanceKm : Infinity;
+    if (distanceSortAscending) {
+      return da - db;
+    }
+    return db - da;
+  });
+
+  for (const ac of sorted) {
+    const tr = document.createElement('tr');
+
+    function cell(text) {
+      const td = document.createElement('td');
+      td.textContent = text ?? '';
+      return td;
+    }
+
+    const altText =
+      ac.altitudeFt != null ? Math.round(ac.altitudeFt).toString() : '';
+    const spdText =
+      ac.speedKt != null ? Math.round(ac.speedKt).toString() : '';
+    let lookText = '';
+    if (ac.lookDirection && ac.bearingDeg != null) {
+      lookText = `${ac.lookDirection} (${ac.bearingDeg.toFixed(1)}°)`;
+    }
+    const distText =
+      ac.distanceKm != null ? ac.distanceKm.toFixed(1) : '';
+
+    tr.appendChild(cell(ac.callsign || ''));
+    tr.appendChild(cell(ac.airline || ''));
+    tr.appendChild(cell(ac.originDisplay || ''));
+    tr.appendChild(cell(ac.destinationDisplay || ''));
+    tr.appendChild(cell(ac.model || ''));
+    tr.appendChild(cell(altText));
+    tr.appendChild(cell(spdText));
+    tr.appendChild(cell(distText));
+    tr.appendChild(cell(lookText));
+
+    tbody.appendChild(tr);
+
+    addAircraftMarker(ac);
+  }
+}
+
 async function fetchAircraft() {
   const locationSelect = document.getElementById('locationSelect');
   const radiusSelect = document.getElementById('radiusSelect');
   const statusEl = document.getElementById('status');
-  const tbody = document.getElementById('resultsBody');
 
   const loc = locationSelect.value;
   const radiusKm = radiusSelect ? radiusSelect.value : '';
 
   statusEl.textContent = 'Loading...';
-  tbody.innerHTML = '';
+  lastAircraft = [];
   clearMarkers();
+  renderView();
 
   try {
     const params = new URLSearchParams();
@@ -167,39 +228,8 @@ async function fetchAircraft() {
 
     statusEl.textContent = statusText;
 
-    if (aircraft.length === 0) return;
-
-    for (const ac of aircraft) {
-      const tr = document.createElement('tr');
-
-      function cell(text) {
-        const td = document.createElement('td');
-        td.textContent = text ?? '';
-        return td;
-      }
-
-      const altText =
-        ac.altitudeFt != null ? Math.round(ac.altitudeFt).toString() : '';
-      const spdText =
-        ac.speedKt != null ? Math.round(ac.speedKt).toString() : '';
-      let lookText = '';
-      if (ac.lookDirection && ac.bearingDeg != null) {
-        lookText = `${ac.lookDirection} (${ac.bearingDeg.toFixed(1)}°)`;
-      }
-
-      tr.appendChild(cell(ac.callsign || ''));
-      tr.appendChild(cell(ac.airline || ''));
-      tr.appendChild(cell(ac.originDisplay || ''));
-      tr.appendChild(cell(ac.destinationDisplay || ''));
-      tr.appendChild(cell(ac.model || ''));
-      tr.appendChild(cell(altText));
-      tr.appendChild(cell(spdText));
-      tr.appendChild(cell(lookText));
-
-      tbody.appendChild(tr);
-
-      addAircraftMarker(ac);
-    }
+    lastAircraft = aircraft;
+    renderView();
   } catch (err) {
     console.error(err);
     statusEl.textContent = `Error fetching data: ${err.message}`;
@@ -212,6 +242,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const refreshBtn = document.getElementById('refreshBtn');
   const radiusSelect = document.getElementById('radiusSelect');
   const locationSelect = document.getElementById('locationSelect');
+  const distanceHeader = document.getElementById('distanceHeader');
 
   refreshBtn.addEventListener('click', fetchAircraft);
 
@@ -220,6 +251,12 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   if (locationSelect) {
     locationSelect.addEventListener('change', fetchAircraft);
+  }
+  if (distanceHeader) {
+    distanceHeader.addEventListener('click', () => {
+      distanceSortAscending = !distanceSortAscending;
+      renderView();
+    });
   }
 
   fetchAircraft();

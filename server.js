@@ -5,6 +5,7 @@
 //  - Provides /api/aircraft?location=1|2|3&radiusKm=...
 //  - Calls ADSB.lol for aircraft near the selected location
 //  - Computes bearing + direction from observer at 43.687737, -65.128691
+//  - Computes distance (km) from observer to each aircraft
 //  - Fetches cloud ceiling (ft) near Lockeport via AviationWeather METAR API (CYQI)
 //  - Uses adsbdb.com, AeroDataBox, and optionally AviationStack
 //    + OpenFlights / OurAirports data to infer origin/destination city+country
@@ -63,7 +64,7 @@ const LOCATIONS = {
   '3': { name: 'Mississauga, Ontario', lat: 43.5890, lon: -79.6441 }
 };
 
-// Observer position for direction/bearing
+// Observer position for direction/bearing/distance
 const OBS_LAT = 43.687737;
 const OBS_LON = -65.128691;
 
@@ -112,6 +113,9 @@ const ICAO_TO_IATA = {
   SWA: 'WN'
 };
 
+// Earth radius for distance calculation
+const EARTH_RADIUS_KM = 6371;
+
 // ---------------------------------------------------------------------
 // MATH HELPERS
 // ---------------------------------------------------------------------
@@ -137,6 +141,20 @@ function bearingDegrees(lat1, lon1, lat2, lon2) {
 
   const brng = toDeg(Math.atan2(x, y));
   return (brng + 360) % 360; // normalize to [0, 360)
+}
+
+// Haversine distance in km
+function distanceKm(lat1, lon1, lat2, lon2) {
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return EARTH_RADIUS_KM * c;
 }
 
 function bearingToDirection(brng) {
@@ -627,10 +645,17 @@ function baseFormatAircraft(ac) {
 
   let bearingDeg = null;
   let lookDirection = null;
+  let distanceFromObserverKm = null;
+
   if (lat != null && lon != null && !Number.isNaN(lat) && !Number.isNaN(lon)) {
     const br = bearingDegrees(OBS_LAT, OBS_LON, lat, lon);
     bearingDeg = Math.round(br * 10) / 10;
     lookDirection = bearingToDirection(br);
+
+    const dist = distanceKm(OBS_LAT, OBS_LON, lat, lon);
+    if (Number.isFinite(dist)) {
+      distanceFromObserverKm = dist;
+    }
   }
 
   return {
@@ -645,6 +670,7 @@ function baseFormatAircraft(ac) {
     lat: Number.isFinite(lat) ? lat : null,
     lon: Number.isFinite(lon) ? lon : null,
     headingDeg,
+    distanceKm: distanceFromObserverKm,
 
     originIcao: null,
     destinationIcao: null,
