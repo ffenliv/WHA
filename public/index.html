@@ -41,25 +41,36 @@
 
   <div id="status"></div>
 
-  <!-- Map container -->
-  <div id="map"></div>
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab-button active" data-tab="mapTab">Map</button>
+    <button class="tab-button" data-tab="tableTab">Data Table</button>
+  </div>
 
-  <table id="resultsTable">
-    <thead>
-      <tr>
-        <th>Callsign</th>
-        <th>Airline</th>
-        <th>Origin</th>
-        <th>Destination</th>
-        <th>Model</th>
-        <th>Altitude (ft)</th>
-        <th>Speed (kt)</th>
-        <th id="distanceHeader" class="sortable">Distance (km)</th>
-        <th>Look</th>
-      </tr>
-    </thead>
-    <tbody id="resultsBody"></tbody>
-  </table>
+  <!-- Map tab -->
+  <div id="mapTab" class="tab-panel active">
+    <div id="map"></div>
+  </div>
+
+  <!-- Table tab -->
+  <div id="tableTab" class="tab-panel">
+    <table id="resultsTable">
+      <thead>
+        <tr>
+          <th>Callsign</th>
+          <th>Airline</th>
+          <th>Origin</th>
+          <th>Destination</th>
+          <th>Model</th>
+          <th>Altitude (ft)</th>
+          <th>Speed (kt)</th>
+          <th id="distanceHeader" class="sortable">Distance (km)</th>
+          <th>Look</th>
+        </tr>
+      </thead>
+      <tbody id="resultsBody"></tbody>
+    </table>
+  </div>
 
   <!-- Leaflet JS -->
   <script

@@ -28,9 +28,6 @@ function clearMarkers() {
 function airportCodeFromIcao(icao) {
   if (!icao) return '';
   const up = icao.toUpperCase();
-
-  // Simple heuristic: for North American ICAOs (KXXX / CXXX),
-  // strip the leading K/C to get the common 3-letter code.
   if (up.length === 4 && (up.startsWith('K') || up.startsWith('C'))) {
     return up.slice(1);
   }
@@ -42,7 +39,6 @@ function addAircraftMarker(ac) {
 
   const lat = ac.lat;
   const lon = ac.lon;
-
   const heading = ac.headingDeg != null ? ac.headingDeg : 0;
 
   const spdShort = ac.speedKt != null ? Math.round(ac.speedKt) : null;
@@ -73,12 +69,8 @@ function addAircraftMarker(ac) {
   let labelHtml = '';
   if (line1 || line2) {
     labelHtml += `<div class="aircraft-label">`;
-    if (line1) {
-      labelHtml += `${line1}`;
-    }
-    if (line2) {
-      labelHtml += `<br/>${line2}`;
-    }
+    if (line1) labelHtml += `${line1}`;
+    if (line2) labelHtml += `<br/>${line2}`;
     labelHtml += '</div>';
   }
 
@@ -147,10 +139,7 @@ function renderView() {
   sorted.sort((a, b) => {
     const da = a.distanceKm != null ? a.distanceKm : Infinity;
     const db = b.distanceKm != null ? b.distanceKm : Infinity;
-    if (distanceSortAscending) {
-      return da - db;
-    }
-    return db - da;
+    return distanceSortAscending ? da - db : db - da;
   });
 
   for (const ac of sorted) {
@@ -249,8 +238,35 @@ async function fetchAircraft() {
   }
 }
 
+function initTabs() {
+  const buttons = document.querySelectorAll('.tab-button');
+  const panels = document.querySelectorAll('.tab-panel');
+
+  buttons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const targetId = btn.getAttribute('data-tab');
+
+      buttons.forEach((b) => b.classList.remove('active'));
+      panels.forEach((p) => p.classList.remove('active'));
+
+      btn.classList.add('active');
+      const targetPanel = document.getElementById(targetId);
+      if (targetPanel) {
+        targetPanel.classList.add('active');
+      }
+
+      if (targetId === 'mapTab' && map) {
+        setTimeout(() => {
+          map.invalidateSize();
+        }, 0);
+      }
+    });
+  });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   initMap();
+  initTabs();
 
   const refreshBtn = document.getElementById('refreshBtn');
   const radiusSelect = document.getElementById('radiusSelect');
