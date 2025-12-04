@@ -382,9 +382,7 @@ async function fetchAircraft() {
   const radiusKm = radiusSelect ? radiusSelect.value : '';
 
   statusEl.textContent = 'Loading...';
-  lastAircraft = [];
-  clearMarkers();
-  renderView();
+  // Keep existing markers and trails while loading new data.
 
   try {
     const params = new URLSearchParams();
