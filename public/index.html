@@ -5,12 +5,9 @@
   <title>Nearby Aircraft Viewer</title>
   <link rel="stylesheet" href="style.css" />
 
-  <!-- Leaflet CSS -->
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-    crossorigin=""
   />
 </head>
 <body>
@@ -41,18 +38,16 @@
 
   <div id="status"></div>
 
-  <!-- Tabs -->
   <div class="tabs">
     <button class="tab-button active" data-tab="mapTab">Map</button>
     <button class="tab-button" data-tab="tableTab">Data Table</button>
+    <button class="tab-button" data-tab="statsTab">Stats</button>
   </div>
 
-  <!-- Map tab -->
   <div id="mapTab" class="tab-panel active">
     <div id="map"></div>
   </div>
 
-  <!-- Table tab -->
   <div id="tableTab" class="tab-panel">
     <table id="resultsTable">
       <thead>
@@ -72,13 +67,11 @@
     </table>
   </div>
 
-  <!-- Leaflet JS -->
-  <script
-    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-    crossorigin=""
-  ></script>
+  <div id="statsTab" class="tab-panel">
+    <div id="statsContent"></div>
+  </div>
 
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

@@ -2,8 +2,13 @@
 
 let map;
 let markersLayer;
+let trailLayer;
 let lastAircraft = [];
 let distanceSortAscending = true;
+
+// trail history: key (icao24 or callsign) -> array of {lat, lon}
+const trails = {};
+const MAX_TRAIL_POINTS = 20;
 
 function initMap() {
   const defaultLat = 43.700;
@@ -16,6 +21,8 @@ function initMap() {
     attribution: '&copy; OpenStreetMap contributors'
   }).addTo(map);
 
+  // Trails under markers
+  trailLayer = L.layerGroup().addTo(map);
   markersLayer = L.layerGroup().addTo(map);
 }
 
@@ -23,6 +30,7 @@ function clearMarkers() {
   if (markersLayer) {
     markersLayer.clearLayers();
   }
+  // Important: we do NOT clear trailLayer here; trails persist and are pruned
 }
 
 function airportCodeFromIcao(icao) {
@@ -125,6 +133,163 @@ function addAircraftMarker(ac) {
   marker.addTo(markersLayer);
 }
 
+// Update in-memory trails based on lastAircraft, then redraw polylines
+function updateAndDrawTrails() {
+  if (!trailLayer || !map) return;
+
+  // Build set of active keys this frame
+  const activeKeys = new Set();
+
+  // Update trails with latest positions
+  for (const ac of lastAircraft) {
+    if (ac.lat == null || ac.lon == null) continue;
+    const key = ac.icao24 || ac.callsign;
+    if (!key) continue;
+    activeKeys.add(key);
+
+    if (!trails[key]) {
+      trails[key] = [];
+    }
+    const list = trails[key];
+    const lastPoint = list[list.length - 1];
+    if (!lastPoint || lastPoint.lat !== ac.lat || lastPoint.lon !== ac.lon) {
+      list.push({ lat: ac.lat, lon: ac.lon });
+      if (list.length > MAX_TRAIL_POINTS) {
+        list.shift();
+      }
+    }
+  }
+
+  // Remove trails for aircraft no longer present
+  for (const key of Object.keys(trails)) {
+    if (!activeKeys.has(key)) {
+      delete trails[key];
+    }
+  }
+
+  // Redraw all trail polylines
+  trailLayer.clearLayers();
+  for (const key of Object.keys(trails)) {
+    const pts = trails[key];
+    if (!pts || pts.length < 2) continue;
+    const latlngs = pts.map((p) => [p.lat, p.lon]);
+    L.polyline(latlngs, {
+      color: 'blue',
+      weight: 2,
+      opacity: 0.5
+    }).addTo(trailLayer);
+  }
+}
+
+// Stats tab rendering
+function renderStats() {
+  const statsEl = document.getElementById('statsContent');
+  if (!statsEl) return;
+
+  if (!lastAircraft || lastAircraft.length === 0) {
+    statsEl.innerHTML = '<p>No aircraft data available.</p>';
+    return;
+  }
+
+  const total = lastAircraft.length;
+
+  // Altitude bands
+  const bands = {
+    '<5000': 0,
+    '5k–10k': 0,
+    '10k–20k': 0,
+    '>20k': 0
+  };
+
+  // Airline counts
+  const airlineCounts = {};
+
+  // Distances
+  let distSum = 0;
+  let distCount = 0;
+  let maxDist = 0;
+
+  for (const ac of lastAircraft) {
+    const alt = ac.altitudeFt != null ? ac.altitudeFt : null;
+    if (alt != null) {
+      if (alt < 5000) bands['<5000']++;
+      else if (alt < 10000) bands['5k–10k']++;
+      else if (alt < 20000) bands['10k–20k']++;
+      else bands['>20k']++;
+    }
+
+    const airline = ac.airline || 'Unknown';
+    airlineCounts[airline] = (airlineCounts[airline] || 0) + 1;
+
+    if (ac.distanceKm != null) {
+      distSum += ac.distanceKm;
+      distCount++;
+      if (ac.distanceKm > maxDist) {
+        maxDist = ac.distanceKm;
+      }
+    }
+  }
+
+  const avgDist = distCount > 0 ? distSum / distCount : null;
+
+  // Top airlines by count
+  const topAirlines = Object.entries(airlineCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10);
+
+  let html = '';
+
+  html += `<h2>Current Stats</h2>`;
+  html += `<p><strong>Total aircraft:</strong> ${total}</p>`;
+
+  if (avgDist != null) {
+    html += `<p><strong>Average distance from observer:</strong> ${avgDist.toFixed(
+      1
+    )} km (max ${maxDist.toFixed(1)} km)</p>`;
+  }
+
+  html += `
+    <h3>Altitude Distribution</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Band</th>
+          <th>Count</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>&lt; 5,000 ft</td><td>${bands['<5000']}</td></tr>
+        <tr><td>5,000–10,000 ft</td><td>${bands['5k–10k']}</td></tr>
+        <tr><td>10,000–20,000 ft</td><td>${bands['10k–20k']}</td></tr>
+        <tr><td>&gt; 20,000 ft</td><td>${bands['>20k']}</td></tr>
+      </tbody>
+    </table>
+  `;
+
+  html += `
+    <h3>Top Airlines (by count)</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Airline</th>
+          <th>Count</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+
+  for (const [airline, count] of topAirlines) {
+    html += `<tr><td>${airline}</td><td>${count}</td></tr>`;
+  }
+
+  html += `
+      </tbody>
+    </table>
+  `;
+
+  statsEl.innerHTML = html;
+}
+
 function renderView() {
   const tbody = document.getElementById('resultsBody');
   if (!tbody) return;
@@ -132,7 +297,12 @@ function renderView() {
   tbody.innerHTML = '';
   clearMarkers();
 
-  if (!lastAircraft || lastAircraft.length === 0) return;
+  if (!lastAircraft || lastAircraft.length === 0) {
+    // still update stats (shows "no data")
+    renderStats();
+    updateAndDrawTrails();
+    return;
+  }
 
   const sorted = [...lastAircraft];
 
@@ -176,6 +346,10 @@ function renderView() {
 
     addAircraftMarker(ac);
   }
+
+  // After markers/table are updated, update trails and stats
+  updateAndDrawTrails();
+  renderStats();
 }
 
 async function fetchAircraft() {
