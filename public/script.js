@@ -6,6 +6,27 @@ let trailLayer;
 let lastAircraft = [];
 let distanceSortAscending = true;
 
+let autoRefreshActive = false;
+let autoRefreshIntervalId = null;
+
+function startAutoRefresh() {
+  if (autoRefreshIntervalId) return;
+  autoRefreshIntervalId = setInterval(() => {
+    if (!autoRefreshActive) return;
+    // Only refresh if tab is visible
+    if (document.visibilityState && document.visibilityState !== 'visible') return;
+    fetchAircraft();
+  }, 5000);
+}
+
+function stopAutoRefresh() {
+  if (autoRefreshIntervalId) {
+    clearInterval(autoRefreshIntervalId);
+    autoRefreshIntervalId = null;
+  }
+}
+
+
 // trail history: key (icao24 or callsign) -> array of {lat, lon}
 const trails = {};
 const MAX_TRAIL_POINTS = 20;
@@ -446,6 +467,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const radiusSelect = document.getElementById('radiusSelect');
   const locationSelect = document.getElementById('locationSelect');
   const distanceHeader = document.getElementById('distanceHeader');
+  const autoToggle = document.getElementById('autoRefreshToggle');
 
   refreshBtn.addEventListener('click', fetchAircraft);
 
@@ -459,6 +481,17 @@ document.addEventListener('DOMContentLoaded', () => {
     distanceHeader.addEventListener('click', () => {
       distanceSortAscending = !distanceSortAscending;
       renderView();
+    });
+  }
+
+  if (autoToggle) {
+    autoToggle.addEventListener('change', () => {
+      autoRefreshActive = autoToggle.checked;
+      if (autoRefreshActive) {
+        startAutoRefresh();
+      } else {
+        stopAutoRefresh();
+      }
     });
   }
 
