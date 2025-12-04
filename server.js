@@ -7,7 +7,7 @@
 //  - Cloud ceiling from AviationWeather METAR (CYQI)
 //  - Route lookup via adsbdb + AeroDataBox + AviationStack
 //  - Airport city/country via OpenFlights + OurAirports
-//  - Frontend with map + data table in tabs, red triangle markers, FL labels, FlightAware link
+//  - Frontend expects enriched aircraft objects
 
 require('dotenv').config();
 
