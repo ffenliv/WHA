@@ -6,6 +6,9 @@ let trailLayer;
 let lastAircraft = [];
 let distanceSortAscending = true;
 
+// Auto-refresh state
+let autoRefreshIntervalId = null;
+
 // trail history: key (icao24 or callsign) -> array of {lat, lon}
 const trails = {};
 const MAX_TRAIL_POINTS = 20;
@@ -494,6 +497,35 @@ function initTabs() {
   });
 }
 
+
+function setAutoRefresh(enabled) {
+  const toggle = document.getElementById('autoRefreshToggle');
+  if (toggle) {
+    toggle.checked = enabled;
+  }
+
+  if (enabled) {
+    if (autoRefreshIntervalId != null) {
+      clearInterval(autoRefreshIntervalId);
+    }
+    autoRefreshIntervalId = setInterval(() => {
+      fetchAircraft();
+    }, 5000);
+  } else {
+    if (autoRefreshIntervalId != null) {
+      clearInterval(autoRefreshIntervalId);
+      autoRefreshIntervalId = null;
+    }
+  }
+}
+
+// Make sure any interval is cleared if the page is unloaded
+window.addEventListener('beforeunload', () => {
+  if (autoRefreshIntervalId != null) {
+    clearInterval(autoRefreshIntervalId);
+  }
+});
+
 document.addEventListener('DOMContentLoaded', () => {
   initMap();
   initTabs();
@@ -503,8 +535,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const locationSelect = document.getElementById('locationSelect');
   const distanceHeader = document.getElementById('distanceHeader');
   const airspaceToggle = document.getElementById('airspaceToggle');
+  const autoRefreshToggle = document.getElementById('autoRefreshToggle');
 
-  refreshBtn.addEventListener('click', fetchAircraft);
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', fetchAircraft);
+  }
 
   if (radiusSelect) {
     radiusSelect.addEventListener('change', fetchAircraft);
@@ -525,6 +560,12 @@ document.addEventListener('DOMContentLoaded', () => {
   if (airspaceToggle) {
     airspaceToggle.addEventListener('change', () => {
       updateAirspaceOverlay();
+    });
+  }
+
+  if (autoRefreshToggle) {
+    autoRefreshToggle.addEventListener('change', () => {
+      setAutoRefresh(autoRefreshToggle.checked);
     });
   }
 

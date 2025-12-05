@@ -147,3 +147,13 @@ th.sortable::after {
 .airspace-toggle input {
   margin-right: 0.25em;
 }
+
+
+/* Auto-refresh toggle */
+.auto-refresh-toggle {
+  margin-left: 1em;
+  font-size: 0.9rem;
+}
+.auto-refresh-toggle input {
+  margin-right: 0.25em;
+}
