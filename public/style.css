@@ -137,3 +137,13 @@ th.sortable::after {
   font-size: 0.75em;
   margin-left: 0.25em;
 }
+
+
+/* Airspace overlay toggle */
+.airspace-toggle {
+  margin-left: 1em;
+  font-size: 0.9rem;
+}
+.airspace-toggle input {
+  margin-right: 0.25em;
+}

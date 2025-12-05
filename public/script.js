@@ -6,30 +6,65 @@ let trailLayer;
 let lastAircraft = [];
 let distanceSortAscending = true;
 
-let autoRefreshActive = false;
-let autoRefreshIntervalId = null;
-
-function startAutoRefresh() {
-  if (autoRefreshIntervalId) return;
-  autoRefreshIntervalId = setInterval(() => {
-    if (!autoRefreshActive) return;
-    // Only refresh if tab is visible
-    if (document.visibilityState && document.visibilityState !== 'visible') return;
-    fetchAircraft();
-  }, 5000);
-}
-
-function stopAutoRefresh() {
-  if (autoRefreshIntervalId) {
-    clearInterval(autoRefreshIntervalId);
-    autoRefreshIntervalId = null;
-  }
-}
-
-
 // trail history: key (icao24 or callsign) -> array of {lat, lon}
 const trails = {};
 const MAX_TRAIL_POINTS = 20;
+
+let airspaceLayer = null;
+
+// Simple mapping from location key to GeoJSON URL.
+// Add your own files under /public/airspace/ and adjust as needed.
+const AIRSPACE_GEOJSON_BY_LOCATION = {
+  "1": "/airspace/location-1.geojson",
+  "2": "/airspace/location-2.geojson",
+  "3": "/airspace/location-3.geojson"
+};
+
+function updateAirspaceOverlay() {
+  if (!map) return;
+
+  const toggle = document.getElementById('airspaceToggle');
+  const locationSelect = document.getElementById('locationSelect');
+
+  // Remove existing overlay, if any
+  if (airspaceLayer) {
+    airspaceLayer.remove();
+    airspaceLayer = null;
+  }
+
+  if (!toggle || !toggle.checked || !locationSelect) {
+    return;
+  }
+
+  const locKey = locationSelect.value || '2';
+  const url = AIRSPACE_GEOJSON_BY_LOCATION[locKey];
+  if (!url) {
+    console.warn('No airspace GeoJSON configured for location', locKey);
+    return;
+  }
+
+  fetch(url)
+    .then((resp) => {
+      if (!resp.ok) {
+        throw new Error('HTTP ' + resp.status);
+      }
+      return resp.json();
+    })
+    .then((geojson) => {
+      airspaceLayer = L.geoJSON(geojson, {
+        style: {
+          color: 'purple',
+          weight: 1,
+          fillOpacity: 0.05
+        }
+      });
+      airspaceLayer.addTo(map);
+    })
+    .catch((err) => {
+      console.error('Error loading airspace overlay:', err);
+    });
+}
+
 
 function initMap() {
   const defaultLat = 43.700;
@@ -382,7 +417,9 @@ async function fetchAircraft() {
   const radiusKm = radiusSelect ? radiusSelect.value : '';
 
   statusEl.textContent = 'Loading...';
-  // Keep existing markers and trails while loading new data.
+  lastAircraft = [];
+  clearMarkers();
+  renderView();
 
   try {
     const params = new URLSearchParams();
@@ -465,7 +502,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const radiusSelect = document.getElementById('radiusSelect');
   const locationSelect = document.getElementById('locationSelect');
   const distanceHeader = document.getElementById('distanceHeader');
-  const autoToggle = document.getElementById('autoRefreshToggle');
+  const airspaceToggle = document.getElementById('airspaceToggle');
 
   refreshBtn.addEventListener('click', fetchAircraft);
 
@@ -473,7 +510,10 @@ document.addEventListener('DOMContentLoaded', () => {
     radiusSelect.addEventListener('change', fetchAircraft);
   }
   if (locationSelect) {
-    locationSelect.addEventListener('change', fetchAircraft);
+    locationSelect.addEventListener('change', () => {
+      fetchAircraft();
+      updateAirspaceOverlay();
+    });
   }
   if (distanceHeader) {
     distanceHeader.addEventListener('click', () => {
@@ -482,14 +522,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  if (autoToggle) {
-    autoToggle.addEventListener('change', () => {
-      autoRefreshActive = autoToggle.checked;
-      if (autoRefreshActive) {
-        startAutoRefresh();
-      } else {
-        stopAutoRefresh();
-      }
+  if (airspaceToggle) {
+    airspaceToggle.addEventListener('change', () => {
+      updateAirspaceOverlay();
     });
   }
 
